@@ -9,3 +9,5 @@ dist
 dist-ssr
 *.local
 out
+
+node
