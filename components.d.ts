@@ -26,5 +26,6 @@ declare module 'vue' {
     TInput: typeof import('tdesign-vue-next')['Input']
     TLink: typeof import('tdesign-vue-next')['Link']
     TSpace: typeof import('tdesign-vue-next')['Space']
+    TTable: typeof import('tdesign-vue-next')['Table']
   }
 }

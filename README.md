@@ -50,6 +50,7 @@ yarn build
 ## 关联项目
 ### 星历计算接口：
     https://github.com/silenty4ng/k5sat
+    https://github.com/palewire/amateur-satellite-database
 
 ### 我的固件：
     https://github.com/silenty4ng/uv-k5-firmware-chinese-lts 

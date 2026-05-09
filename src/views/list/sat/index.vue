@@ -6,8 +6,8 @@
       </template>
       <div>
         <a-textarea v-model="state.selfSatInfo" style="height: 120px;"placeholder="ISS (ZARYA)             
-1 25544U 98067A   24320.36274227  .00015569  00000+0  28188-3 0  9999
-2 25544  51.6413 286.4173 0007936 217.3657 298.3197 15.49809951481990"/>
+1 25544U 98067A   26128.97347854  .00006654  00000+0  12812-3 0  9993
+2 25544  51.6310 134.2107 0007399  38.6382 321.5134 15.49152986565672"/>
       </div>
     </a-modal>
     <a-modal v-model:visible="state.visible" @ok="handleOk" :ok-text="$t('tool.scaned')">
@@ -327,7 +327,7 @@ const scanLocation = async () => {
 }
 
 const handleOk = async () => {
-  const lol = await (await fetch('https://k5.vicicode.cn/api/lol', {
+  const lol = await (await fetch('http://127.0.0.1:8787/lol', {
     method: "POST",
     mode: "cors",
     headers: {
@@ -362,7 +362,7 @@ const restoreRange = async (start: any = 0, uint8Array: any) => {
 const getPass = async () => {
   if (!state.sat) { alert('请选择卫星！'); return; };
   setLoading(true)
-  const res = await (await fetch('https://k5.vicicode.cn/api/pass', {
+  const res = await (await fetch('http://127.0.0.1:8787/pass', {
     method: "POST",
     mode: "cors",
     headers: {
@@ -411,7 +411,7 @@ const writeIt = async () => {
   }
   if (!state.pass) { alert('请选择过境时间！'); return; };
   setLoading(true)
-  const res = await (await fetch('https://k5.vicicode.cn/api/doppler', {
+  const res = await (await fetch('http://127.0.0.1:8787/doppler', {
     method: "POST",
     mode: "cors",
     headers: {

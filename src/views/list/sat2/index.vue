@@ -422,7 +422,7 @@ const initSat = async () => {
   if (sessionStorage.getItem('satRst')) {
     rst = sessionStorage.getItem('satRst') || ""
   } else {
-    rst = await (await fetch('https://celestrak.org/NORAD/elements/amateur.txt')).text()
+    rst = await (await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=amateur&FORMAT=tle')).text()
     sessionStorage.setItem('satRst', rst)
   }
   const lines = rst.split(/\r?\n/);
@@ -446,7 +446,7 @@ const initSat = async () => {
 initSat()
 
 const handleOk = async () => {
-  const lol = await (await fetch('https://k5.vicicode.cn/api/lol', {
+  const lol = await (await fetch('http://127.0.0.1:8787/lol', {
     method: "POST",
     mode: "cors",
     headers: {
