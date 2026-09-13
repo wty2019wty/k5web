@@ -32,10 +32,16 @@
                 <a-col :span="4" v-for="i in state.nowpage">
                   <t-card :style="{ width: '100%', marginBottom: '10px' }">
                     <template #cover>
-                      <div style="display: block; position: absolute; background-color: rgba(0, 0, 0, 0.3); min-width: 80px; color: white; padding-left: 10px;; padding-right: 10px; font-size: 0.9rem;">
-                        点赞：{{ i.star }}
+                      <div class="cover-wrap">
+                        <div class="cover-star">
+                          点赞：{{ i.star }}
+                        </div>
+                        <img
+                          class="cover-img"
+                          :title="i.title + ' [' + i.user.nickname + ']'"
+                          :src="'https://k5ws.vicicode.cn' + i.image"
+                        >
                       </div>
-                      <img style="height: 6.75vw;" :title="i.title + ' [' + i.user.nickname + ']'" :src="'https://k5ws.vicicode.cn' + i.image">
                     </template>
                     <template #footer>
                       <t-row :align="'middle'" justify="center" style="gap: 24px">
@@ -307,6 +313,39 @@ const searchIt = () => {
       gap: 1rem;
       align-items: flex-end;
       max-width: 100%;
+    }
+
+    /* UV-K5 屏幕为 128x64，封面按 2:1 锁定，避免不同图片被拉伸 */
+    .cover-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 2 / 1;
+      overflow: hidden;
+      background-color: #f2f3f5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .cover-star {
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+      display: block;
+      min-width: 80px;
+      padding-left: 10px;
+      padding-right: 10px;
+      background-color: rgba(0, 0, 0, 0.3);
+      color: #fff;
+      font-size: 0.9rem;
+    }
+
+    .cover-img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
     }
 
     .idea-search {
