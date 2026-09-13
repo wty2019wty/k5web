@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0f1419" />
+<title>K5 · WebUSB CH341 诊断</title>
+<style>
+  :root {
+    --bg: #0f1419;
+    --panel: #1a2332;
+    --border: #2d3a4d;
+    --text: #e7ecf3;
+    --muted: #8b9bb4;
+    --ok: #3dd68c;
+    --warn: #f5a524;
+    --err: #f07178;
+    --accent: #4c9aff;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  header {
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, #152033, var(--bg));
+  }
+  header h1 {
+    font-size: 17px;
+    font-weight: 650;
+    letter-spacing: 0.02em;
+  }
+  header p {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px 12px 20px;
+    max-width: 560px;
+    width: 100%;
+    margin: 0 auto;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+  }
+  .card h2 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 10px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .kv {
+    background: #121a26;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    min-height: 52px;
+  }
+  .kv .k {
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .kv .v {
+    margin-top: 2px;
+    font-family: var(--mono);
+    font-size: 13px;
+    word-break: break-all;
+  }
+  .v.ok { color: var(--ok); }
+  .v.warn { color: var(--warn); }
+  .v.err { color: var(--err); }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  button, select {
+    appearance: none;
+    border: 1px solid var(--border);
+    background: #243044;
+    color: var(--text);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 14px;
+    font-weight: 550;
+    min-height: 44px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button:active { transform: scale(0.98); }
+  button.primary {
+    background: var(--accent);
+    border-color: transparent;
+    color: #061018;
+    flex: 1;
+  }
+  button.danger { background: #3a1f24; border-color: #6b3038; }
+  button:disabled {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+  select {
+    flex: 1;
+    min-width: 120px;
+  }
+  .log {
+    flex: 1;
+    min-height: 220px;
+    max-height: 42vh;
+    overflow: auto;
+    background: #0b1017;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-all;
+    -webkit-overflow-scrolling: touch;
+  }
+  .log .t { color: #5d6d85; }
+  .log .ok { color: var(--ok); }
+  .log .warn { color: var(--warn); }
+  .log .err { color: var(--err); }
+  .log .info { color: #9ecbff; }
+  .steps {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #121a26;
+    border: 1px solid var(--border);
+  }
+  .step .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #3a4a61;
+    flex-shrink: 0;
+  }
+  .step.running .dot { background: var(--accent); box-shadow: 0 0 0 3px rgba(76,154,255,.2); }
+  .step.done .dot { background: var(--ok); }
+  .step.fail .dot { background: var(--err); }
+  .hint {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .hint code {
+    font-family: var(--mono);
+    color: #c5d4eb;
+    background: #121a26;
+    padding: 1px 4px;
+    border-radius: 4px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>K5 · WebUSB CH341 诊断</h1>
+  <p>验证安卓 Chrome 能否直连 CH340 写频线（对齐 Linux ch341.c）</p>
+</header>
+
+<main>
+  <section class="card">
+    <h2>环境检测</h2>
+    <div class="grid" id="envGrid"></div>
+  </section>
+
+  <section class="card">
+    <h2>连接控制</h2>
+    <div class="row" style="margin-bottom:10px">
+      <select id="baudSelect" aria-label="波特率">
+        <option value="38400" selected>38400（默认）</option>
+        <option value="115200">115200（UVE5）</option>
+        <option value="9600">9600</option>
+        <option value="57600">57600</option>
+      </select>
+    </div>
+    <div class="row">
+      <button class="primary" id="btnConnect">选择设备并连接</button>
+      <button class="danger" id="btnDisconnect" disabled>断开</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="btnHandshake" disabled>发送 eeprom_init 握手</button>
+      <button id="btnStatus" disabled>读 Modem 状态</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="primary" id="btnWebSerial">优先试原生 Web Serial</button>
+    </div>
+    <p class="hint" style="margin-top:8px">
+      本机显示 Web Serial 可用时，先走原生串口（与桌面 K5Web 相同路径），成功率更高。
+    </p>
+  </section>
+
+  <section class="card">
+    <h2>初始化步骤</h2>
+    <div class="steps" id="steps"></div>
+  </section>
+
+  <section class="card" style="flex:1;display:flex;flex-direction:column;min-height:240px">
+    <h2>日志</h2>
+    <div class="log" id="log"></div>
+    <p class="hint" style="margin-top:8px">
+      需 HTTPS 或 localhost、支持 USB Host 的 OTG 线、Chrome 安卓。
+      若 <code>claimInterface</code> 失败，多半是系统内核已占用 CH340。
+    </p>
+  </section>
+</main>
+
+<script>
+'use strict';
+
+/* ========== UI helpers ========== */
+const $ = (id) => document.getElementById(id);
+const logEl = $('log');
+const stepsEl = $('steps');
+const STEP_KEYS = [
+  'usb', 'open', 'config', 'claim', 'version', 'init', 'baud', 'handshake', 'flow', 'ready'
+];
+const STEP_LABELS = {
+  usb: 'navigator.usb',
+  open: 'device.open',
+  config: 'selectConfiguration',
+  claim: 'claimInterface',
+  version: 'READ_VERSION 0x5F',
+  init: 'SERIAL_INIT 0xA1',
+  baud: 'baudrate + LCR',
+  handshake: 'MODEM_CTRL DTR/RTS',
+  flow: 'FLOW_CTL none',
+  ready: 'bulk 读循环启动'
+};
+
+function renderSteps() {
+  stepsEl.innerHTML = STEP_KEYS.map((k) => (
+    `<div class="step" data-k="${k}"><span class="dot"></span><span>${STEP_LABELS[k]}</span></div>`
+  )).join('');
+}
+function setStep(k, state) {
+  const el = stepsEl.querySelector(`[data-k="${k}"]`);
+  if (!el) return;
+  el.classList.remove('running', 'done', 'fail');
+  if (state) el.classList.add(state);
+}
+function resetSteps() { STEP_KEYS.forEach((k) => setStep(k, '')); }
+
+function ts() {
+  const d = new Date();
+  return d.toTimeString().slice(0, 8);
+}
+function log(msg, cls = '') {
+  const line = document.createElement('div');
+  line.innerHTML = `<span class="t">[${ts()}]</span> <span class="${cls}">${msg}</span>`;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function hex(buf) {
+  return Array.from(buf instanceof Uint8Array ? buf : new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join(' ');
+}
+
+/* ========== Env detection ========== */
+function detectEnv() {
+  const ua = navigator.userAgent;
+  const isAndroid = /Android/i.test(ua);
+  const isChrome = /Chrome\//i.test(ua) && !/Edg\//i.test(ua);
+  const secure = window.isSecureContext;
+  const hasUsb = 'usb' in navigator;
+  const hasSerial = 'serial' in navigator;
+  const items = [
+    ['Secure Context', secure ? 'yes' : 'no', secure ? 'ok' : 'err'],
+    ['WebUSB', hasUsb ? 'yes' : 'no', hasUsb ? 'ok' : 'err'],
+    ['Web Serial', hasSerial ? 'partial/native' : 'no', hasSerial ? 'warn' : ''],
+    ['Android', isAndroid ? 'yes' : 'no', isAndroid ? 'ok' : ''],
+    ['Chrome', isChrome ? 'yes' : 'likely no', isChrome ? 'ok' : 'warn'],
+    ['Online', navigator.onLine ? 'yes' : 'no', ''],
+  ];
+  $('envGrid').innerHTML = items.map(([k, v, c]) => (
+    `<div class="kv"><div class="k">${k}</div><div class="v ${c}">${v}</div></div>`
+  )).join('');
+  return { secure, hasUsb, hasSerial, isAndroid };
+}
+
+/* ========== CH341 constants (Linux ch341.c) ========== */
+const CH341 = {
+  REQ_READ_VERSION: 0x5F,
+  REQ_WRITE_REG: 0x9A,
+  REQ_READ_REG: 0x95,
+  REQ_SERIAL_INIT: 0xA1,
+  REQ_MODEM_CTRL: 0xA4,
+  REG_PRESCALER: 0x12,
+  REG_DIVISOR: 0x13,
+  REG_LCR: 0x18,
+  REG_LCR2: 0x25,
+  REG_FLOW_CTL: 0x27,
+  LCR_ENABLE_RX: 0x80,
+  LCR_ENABLE_TX: 0x40,
+  LCR_CS8: 0x03,
+  BIT_RTS: 1 << 6,
+  BIT_DTR: 1 << 5,
+  BITS_MODEM_STAT: 0x0f,
+  BIT_CTS: 0x01,
+  BIT_DSR: 0x02,
+  BIT_DCD: 0x08,
+  CLKRATE: 48000000,
+  MIN_BPS: Math.ceil(48000000 / (Math.pow(2, 12) * 256)),
+  MAX_BPS: 48000000 / (Math.pow(2, 12 - 9) * 2),
+};
+
+const SUPPORTED = [
+  { vendorId: 0x1a86, productId: 0x7523, name: 'CH340' },
+  { vendorId: 0x1a86, productId: 0x7522, name: 'CH340' },
+  { vendorId: 0x1a86, productId: 0x5523, name: 'CH341A' },
+  { vendorId: 0x4348, productId: 0x5523, name: 'CH341-compat' },
+];
+
+/* ========== USB helpers ========== */
+async function ctrlOut(dev, request, value, index, data) {
+  const setup = { requestType: 'vendor', recipient: 'device', request, value, index };
+  const res = data
+    ? await dev.controlTransferOut(setup, data)
+    : await dev.controlTransferOut(setup);
+  if (res.status !== 'ok') {
+    throw new Error(`controlTransferOut status=${res.status} req=0x${request.toString(16)}`);
+  }
+  return res;
+}
+
+async function ctrlIn(dev, request, value, index, length) {
+  const res = await dev.controlTransferIn(
+    { requestType: 'vendor', recipient: 'device', request, value, index },
+    length
+  );
+  if (res.status !== 'ok') {
+    throw new Error(`controlTransferIn status=${res.status} req=0x${request.toString(16)}`);
+  }
+  return new Uint8Array(res.data.buffer, res.data.byteOffset, res.data.byteLength);
+}
+
+/* divisor algorithm from linux ch341_get_divisor */
+function clkDiv(ps, fact) {
+  return 1 << (12 - 3 * ps - fact);
+}
+function minRate(ps) {
+  return CH341.CLKRATE / (clkDiv(ps, 1) * 512);
+}
+
+function ch341GetDivisor(speed, limitedPrescaler = false) {
+  speed = Math.min(Math.max(speed, CH341.MIN_BPS), CH341.MAX_BPS);
+  let fact = 1;
+  let ps = 3;
+  for (; ps >= 0; ps--) {
+    if (speed > minRate(ps)) break;
+  }
+  if (ps < 0) throw new Error('baud out of range');
+  let forceFact0 = false;
+  let cdiv = clkDiv(ps, fact);
+  let div = Math.floor(CH341.CLKRATE / (cdiv * speed));
+  if (ps < 3 && limitedPrescaler) forceFact0 = true;
+  if (div < 9 || div > 255 || forceFact0) {
+    div = Math.floor(div / 2);
+    cdiv *= 2;
+    fact = 0;
+  }
+  if (div < 2) throw new Error('invalid divisor');
+  const left = 16 * CH341.CLKRATE / (cdiv * div) - 16 * speed;
+  const right = 16 * speed - 16 * CH341.CLKRATE / (cdiv * (div + 1));
+  if (left >= right) div++;
+  if (fact === 1 && div % 2 === 0) {
+    div = Math.floor(div / 2);
+    fact = 0;
+  }
+  return ((0x100 - div) << 8) | (fact << 2) | ps;
+}
+
+function lcr8n1() {
+  return CH341.LCR_ENABLE_RX | CH341.LCR_ENABLE_TX | CH341.LCR_CS8; // 0xC3
+}
+
+/* ========== Session state ========== */
+const state = {
+  device: null,
+  nativePort: null,
+  mode: 'usb', // 'usb' | 'serial'
+  iface: 0,
+  epIn: 0,
+  epOut: 0,
+  epInSize: 64,
+  epOutSize: 64,
+  epIntr: null,
+  version: 0,
+  mcr: CH341.BIT_DTR | CH341.BIT_RTS,
+  msr: 0,
+  readable: null,
+  writable: null,
+  readLoopRunning: false,
+  connected: false,
+  controlChain: Promise.resolve(),
+};
+
+function withControl(fn) {
+  const run = state.controlChain.then(fn, fn);
+  state.controlChain = run.then(() => {}, () => {});
+  return run;
+}
+
+function parseEndpoints(dev) {
+  const cfg = dev.configuration;
+  if (!cfg) throw new Error('no configuration');
+  let ifaceNum = null;
+  let alt0 = null;
+  for (const iface of cfg.interfaces) {
+    for (const alt of iface.alternates) {
+      if (alt.interfaceClass === 0xff || alt.interfaceClass === 2) {
+        ifaceNum = iface.interfaceNumber;
+        alt0 = alt;
+        break;
+      }
+    }
+    if (ifaceNum !== null) break;
+  }
+  if (ifaceNum === null) {
+    // fallback: first interface
+    ifaceNum = cfg.interfaces[0].interfaceNumber;
+    alt0 = cfg.interfaces[0].alternates[0];
+  }
+  let epIn = null, epOut = null, epIntr = null;
+  for (const ep of alt0.endpoints) {
+    if (ep.type === 'bulk' && ep.direction === 'in') epIn = ep;
+    else if (ep.type === 'bulk' && ep.direction === 'out') epOut = ep;
+    else if (ep.type === 'interrupt' && ep.direction === 'in') epIntr = ep;
+  }
+  if (!epIn || !epOut) throw new Error('missing bulk endpoints');
+  return {
+    ifaceNum,
+    epIn: epIn.endpointNumber,
+    epOut: epOut.endpointNumber,
+    epInSize: epIn.packetSize || 64,
+    epOutSize: epOut.packetSize || 64,
+    epIntr: epIntr ? epIntr.endpointNumber : null,
+  };
+}
+
+async function ch341Configure(baudRate) {
+  const dev = state.device;
+  // READ_VERSION
+  const verBuf = await ctrlIn(dev, CH341.REQ_READ_VERSION, 0, 0, 2);
+  state.version = verBuf[0];
+  log(`chip version = 0x${state.version.toString(16).padStart(2, '0')}`, 'info');
+  setStep('version', 'done');
+
+  // SERIAL_INIT (kernel: value=0,index=0)
+  await ctrlOut(dev, CH341.REQ_SERIAL_INIT, 0, 0);
+  setStep('init', 'done');
+
+  // baud + lcr
+  let val = ch341GetDivisor(baudRate, false);
+  if (state.version > 0x27) val |= 1 << 7; // flush 32-byte buffer
+  await ctrlOut(dev, CH341.REQ_WRITE_REG, (CH341.REG_DIVISOR << 8) | CH341.REG_PRESCALER, val);
+  if (state.version >= 0x30) {
+    await ctrlOut(dev, CH341.REQ_WRITE_REG, (CH341.REG_LCR2 << 8) | CH341.REG_LCR, lcr8n1());
+  }
+  log(`baud ${baudRate} → divisor word 0x${val.toString(16)}`, 'info');
+  setStep('baud', 'done');
+
+  // handshake DTR|RTS, value = ~mcr
+  state.mcr = CH341.BIT_DTR | CH341.BIT_RTS;
+  await ctrlOut(dev, CH341.REQ_MODEM_CTRL, (~state.mcr) & 0xff, 0);
+  setStep('handshake', 'done');
+
+  // flow control none
+  await ctrlOut(dev, CH341.REQ_WRITE_REG, (CH341.REG_FLOW_CTL << 8) | CH341.REG_FLOW_CTL, 0x0000);
+  setStep('flow', 'done');
+
+  // smoke status
+  const st = await ctrlIn(dev, CH341.REQ_READ_REG, 0x0706, 0, 2);
+  state.msr = (~st[0]) & CH341.BITS_MODEM_STAT;
+  log(`MSR raw=${hex(st)} → CTS=${!!(state.msr & CH341.BIT_CTS)} DSR=${!!(state.msr & CH341.BIT_DSR)} DCD=${!!(state.msr & CH341.BIT_DCD)}`, 'info');
+}
+
+function makeStreams() {
+  let closed = false;
+  let readError = null;
+  const chunkQueue = [];
+  let readWaiter = null;
+
+  const readable = new ReadableStream({
+    start(controller) {
+      state._readController = controller;
+    },
+    pull() {},
+    cancel() {
+      closed = true;
+      if (readWaiter) {
+        readWaiter(null);
+        readWaiter = null;
+      }
+    }
+  });
+
+  const writable = new WritableStream({
+    async write(chunk) {
+      if (!state.device || !state.connected) throw new Error('not connected');
+      const data = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk);
+      let offset = 0;
+      const size = state.epOutSize;
+      while (offset < data.length) {
+        const slice = data.subarray(offset, offset + size);
+        const res = await state.device.transferOut(state.epOut, slice);
+        if (res.status !== 'ok') throw new Error(`transferOut ${res.status}`);
+        offset += slice.length;
+      }
+    },
+    close() {},
+    abort() {}
+  });
+
+  return { readable, writable };
+}
+
+async function readLoop() {
+  state.readLoopRunning = true;
+  const dev = state.device;
+  const assemble = makePacketAssembler(describeK5Packet);
+  while (state.connected && dev.opened) {
+    try {
+      const res = await dev.transferIn(state.epIn, state.epInSize);
+      if (!state.connected) break;
+      if (res.status !== 'ok') {
+        log(`bulk IN status=${res.status}`, 'warn');
+        continue;
+      }
+      if (res.data && res.data.byteLength) {
+        const bytes = new Uint8Array(res.data.buffer, res.data.byteOffset, res.data.byteLength);
+        log(`RX ${bytes.length}B: ${hex(bytes)}`, 'ok');
+        assemble(bytes);
+        try {
+          state._readController.enqueue(bytes.slice());
+        } catch (e) {
+          // stream cancelled
+        }
+      }
+    } catch (e) {
+      if (state.connected) log(`bulk IN error: ${e.message || e}`, 'err');
+      break;
+    }
+  }
+  state.readLoopRunning = false;
+  try { state._readController.close(); } catch {}
+}
+
+/* Exact port of src/utils/serial.js packetize / xor / crc16xmodem */
+
+const K5_XOR = new Uint8Array([
+  0x16, 0x6c, 0x14, 0xe6, 0x2e, 0x91, 0x0d, 0x40,
+  0x21, 0x35, 0xd5, 0x40, 0x13, 0x03, 0xe9, 0x80
+]);
+
+function xor(data) {
+  const out = new Uint8Array(data);
+  for (let i = 0; i < out.length; i++) {
+    out[i] ^= K5_XOR[i % K5_XOR.length];
+  }
+  return out;
+}
+
+function crc16xmodem(data, crc = 0) {
+  const poly = 0x1021;
+  for (let i = 0; i < data.length; i++) {
+    crc ^= data[i] << 8;
+    for (let j = 0; j < 8; j++) {
+      crc = (crc & 0x8000) ? ((crc << 1) ^ poly) : (crc << 1);
+      crc &= 0xffff;
+    }
+  }
+  return crc;
+}
+
+function packetize(data) {
+  const payload = data instanceof Uint8Array ? data : new Uint8Array(data);
+  const crcVal = crc16xmodem(payload);
+  const withCrc = new Uint8Array(payload.length + 2);
+  withCrc.set(payload, 0);
+  withCrc[payload.length] = crcVal & 0xff;
+  withCrc[payload.length + 1] = (crcVal >> 8) & 0xff;
+  const obfuscated = xor(withCrc);
+  // header(2)+len(2)+xor(payload+crc)+footer(2) — no padding
+  const packet = new Uint8Array(2 + 2 + obfuscated.length + 2);
+  packet[0] = 0xAB;
+  packet[1] = 0xCD;
+  packet[2] = payload.length & 0xff;
+  packet[3] = (payload.length >> 8) & 0xff;
+  packet.set(obfuscated, 4);
+  packet[packet.length - 2] = 0xDC;
+  packet[packet.length - 1] = 0xBA;
+  return packet;
+}
+
+function unpacketize(packet) {
+  const len = packet[2] | (packet[3] << 8);
+  const body = packet.slice(4, packet.length - 4);
+  if (body.length !== len + 2) return null; // payload + crc
+  return xor(body); // payload + crc16
+}
+
+/** Accumulate bulk fragments into full AB CD … DC BA packets */
+function makePacketAssembler(onPacket) {
+  let buf = new Uint8Array(0);
+  return function push(chunk) {
+    const next = new Uint8Array(buf.length + chunk.length);
+    next.set(buf, 0);
+    next.set(chunk, buf.length);
+    buf = next;
+    for (;;) {
+      // sync to header
+      let start = -1;
+      for (let i = 0; i + 1 < buf.length; i++) {
+        if (buf[i] === 0xAB && buf[i + 1] === 0xCD) { start = i; break; }
+      }
+      if (start < 0) {
+        buf = buf.subarray(Math.max(0, buf.length - 1));
+        return;
+      }
+      if (start > 0) buf = buf.subarray(start);
+      if (buf.length < 4) return;
+      const payloadLen = buf[2] | (buf[3] << 8);
+      const total = payloadLen + 8; // header2+len2+payload+crc2+footer2
+      if (buf.length < total) return;
+      if (buf[total - 2] === 0xDC && buf[total - 1] === 0xBA) {
+        const pkt = buf.slice(0, total);
+        buf = buf.subarray(total);
+        onPacket(pkt);
+      } else {
+        buf = buf.subarray(1); // bad footer, resync
+      }
+    }
+  };
+}
+
+function describeK5Packet(pkt) {
+  try {
+    const decoded = unpacketize(pkt);
+    if (!decoded || !decoded.length) return;
+    const cmd = decoded[0];
+    let extra = '';
+    if (cmd === 0x15 && decoded.length >= 20) {
+      // eeprom_init response: version string at offset 4, 16 bytes
+      const ver = decoded.slice(4, 20);
+      const nul = ver.indexOf(0);
+      const s = new TextDecoder().decode(nul >= 0 ? ver.subarray(0, nul) : ver);
+      extra = ` version="${s}"`;
+    }
+    log(`  decoded cmd=0x${cmd.toString(16)} len=${decoded.length}${extra}`, 'ok');
+  } catch (e) {
+    log(`  decode fail: ${e.message || e}`, 'warn');
+  }
+}
+
+/* ========== Connect / disconnect ========== */
+async function connect() {
+  const env = detectEnv();
+  resetSteps();
+  if (!env.secure) {
+    log('需要 HTTPS 或 localhost', 'err');
+    return;
+  }
+  if (!env.hasUsb) {
+    log('当前浏览器没有 navigator.usb，请用安卓 Chrome', 'err');
+    return;
+  }
+
+  setStep('usb', 'running');
+  log('请求 USB 设备…', 'info');
+  let device;
+  try {
+    device = await navigator.usb.requestDevice({ filters: SUPPORTED });
+  } catch (e) {
+    setStep('usb', 'fail');
+    log(`选择设备失败: ${e.message || e}`, 'err');
+    return;
+  }
+  setStep('usb', 'done');
+  log(`设备: ${device.productName || '?'} VID=${device.vendorId.toString(16)} PID=${device.productId.toString(16)}`, 'info');
+
+  state.device = device;
+  state.mode = 'usb';
+  state.connected = false;
+
+  setStep('open', 'running');
+  try {
+    await device.open();
+    setStep('open', 'done');
+  } catch (e) {
+    setStep('open', 'fail');
+    log(`open 失败: ${e.message}`, 'err');
+    return;
+  }
+
+  setStep('config', 'running');
+  try {
+    if (device.configuration === null) {
+      await device.selectConfiguration(1);
+    }
+    const eps = parseEndpoints(device);
+    state.iface = eps.ifaceNum;
+    state.epIn = eps.epIn;
+    state.epOut = eps.epOut;
+    state.epInSize = eps.epInSize;
+    state.epOutSize = eps.epOutSize;
+    state.epIntr = eps.epIntr;
+    log(`iface=${state.iface} bulkIN=${state.epIn}(${state.epInSize}) bulkOUT=${state.epOut}(${state.epOutSize}) intrIN=${state.epIntr}`, 'info');
+    setStep('config', 'done');
+  } catch (e) {
+    setStep('config', 'fail');
+    log(`配置失败: ${e.message}`, 'err');
+    return;
+  }
+
+  setStep('claim', 'running');
+  try {
+    await device.claimInterface(state.iface);
+    setStep('claim', 'done');
+  } catch (e) {
+    setStep('claim', 'fail');
+    log('claimInterface 失败 — 安卓内核可能已占用 CH340（ch341/cdc 驱动）', 'err');
+    log(String(e.message || e), 'err');
+    try { await device.close(); } catch {}
+    return;
+  }
+
+  try {
+    await withControl(() => ch341Configure(Number($('baudSelect').value)));
+  } catch (e) {
+    ['version', 'init', 'baud', 'handshake', 'flow'].forEach((k) => {
+      const el = stepsEl.querySelector(`[data-k="${k}"]`);
+      if (el && el.classList.contains('running')) setStep(k, 'fail');
+    });
+    log(`初始化失败: ${e.message || e}`, 'err');
+    try { await device.releaseInterface(state.iface); } catch {}
+    try { await device.close(); } catch {}
+    return;
+  }
+
+  const streams = makeStreams();
+  state.readable = streams.readable;
+  state.writable = streams.writable;
+  state.connected = true;
+  setStep('ready', 'done');
+  readLoop();
+
+  $('btnConnect').disabled = true;
+  $('btnWebSerial').disabled = true;
+  $('btnDisconnect').disabled = false;
+  $('btnHandshake').disabled = false;
+  $('btnStatus').disabled = false;
+  log('已连接，可以发送握手', 'ok');
+}
+
+async function disconnect() {
+  state.connected = false;
+  if (state.mode === 'serial' && state.nativePort) {
+    try {
+      await state.nativePort.close();
+      log('Web Serial 已关闭', 'info');
+    } catch (e) {
+      log(`关闭 Serial 异常: ${e.message}`, 'warn');
+    }
+    state.nativePort = null;
+  }
+  const dev = state.device;
+  try {
+    if (dev && dev.opened) {
+      try { await ctrlOut(dev, CH341.REQ_MODEM_CTRL, (~0) & 0xff, 0); } catch {}
+      try { await dev.releaseInterface(state.iface); } catch {}
+      try { await dev.close(); } catch {}
+    }
+  } catch (e) {
+    log(`断开异常: ${e.message}`, 'warn');
+  }
+  state.device = null;
+  state.mode = 'usb';
+  state.readable = null;
+  state.writable = null;
+  $('btnConnect').disabled = false;
+  $('btnWebSerial').disabled = false;
+  $('btnDisconnect').disabled = true;
+  $('btnHandshake').disabled = true;
+  $('btnStatus').disabled = true;
+  log('已断开', 'info');
+}
+
+/* ========== Actions ========== */
+async function sendHandshake() {
+  if (!state.connected || !state.writable) return;
+  const payload = new Uint8Array([0x14, 0x05, 0x04, 0x00, 0xff, 0xff, 0xff, 0xff]);
+  const packet = packetize(payload);
+  log(`TX handshake (${packet.length}B): ${hex(packet)}`, 'info');
+  try {
+    const writer = state.writable.getWriter();
+    // 64B chunks + 1ms like K5Web sendPacket
+    for (let i = 0; i < packet.length; i += 64) {
+      await writer.write(packet.subarray(i, i + 64));
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    writer.releaseLock();
+    log('握手已发送，等待 0x15 响应…', 'ok');
+  } catch (e) {
+    log(`发送失败: ${e.message || e}`, 'err');
+  }
+}
+
+async function readModemStatus() {
+  if (!state.connected || !state.device) return;
+  try {
+    const st = await withControl(() => ctrlIn(state.device, CH341.REQ_READ_REG, 0x0706, 0, 2));
+    state.msr = (~st[0]) & CH341.BITS_MODEM_STAT;
+    log(
+      `MSR raw=${hex(st)} CTS=${!!(state.msr & CH341.BIT_CTS)} DSR=${!!(state.msr & CH341.BIT_DSR)} DCD=${!!(state.msr & CH341.BIT_DCD)}`,
+      'ok'
+    );
+  } catch (e) {
+    log(`读状态失败: ${e.message || e}`, 'err');
+  }
+}
+
+/* ========== Native Web Serial path (same as desktop K5Web) ========== */
+async function connectWebSerial() {
+  const env = detectEnv();
+  if (!env.hasSerial) {
+    log('本机没有 navigator.serial，只能走 WebUSB', 'warn');
+    return;
+  }
+  // free webusb session if any
+  if (state.connected && state.device) {
+    await disconnect().catch(() => {});
+  }
+  resetSteps();
+  setStep('usb', 'running');
+  log('请求原生 Web Serial 端口…', 'info');
+  let port;
+  try {
+    port = await navigator.serial.requestPort();
+  } catch (e) {
+    setStep('usb', 'fail');
+    log(`Web Serial 选择失败: ${e.message || e}`, 'err');
+    return;
+  }
+  setStep('usb', 'done');
+  const info = port.getInfo ? port.getInfo() : {};
+  log(`Serial info VID=${(info.usbVendorId || 0).toString(16)} PID=${(info.usbProductId || 0).toString(16)}`, 'info');
+
+  const baudRate = Number($('baudSelect').value);
+  setStep('open', 'running');
+  try {
+    await port.open({ baudRate });
+    setStep('open', 'done');
+    setStep('config', 'done');
+    setStep('claim', 'done');
+    setStep('version', 'done');
+    setStep('init', 'done');
+    setStep('baud', 'done');
+    setStep('handshake', 'done');
+    setStep('flow', 'done');
+    setStep('ready', 'done');
+  } catch (e) {
+    setStep('open', 'fail');
+    log(`port.open(${baudRate}) 失败: ${e.message || e}`, 'err');
+    return;
+  }
+
+  state.nativePort = port;
+  state.mode = 'serial';
+  state.connected = true;
+  state.readable = port.readable;
+  state.writable = port.writable;
+
+  // drain readable into log (non-blocking monitor)
+  (async () => {
+    const assemble = makePacketAssembler(describeK5Packet);
+    while (state.connected && port.readable) {
+      const reader = port.readable.getReader();
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value && value.length) {
+            log(`RX ${value.length}B: ${hex(value)}`, 'ok');
+            assemble(value);
+          }
+        }
+      } catch (e) {
+        if (state.connected) log(`serial read: ${e.message || e}`, 'warn');
+      } finally {
+        try { reader.releaseLock(); } catch {}
+      }
+      if (!state.connected) break;
+    }
+  })();
+
+  $('btnConnect').disabled = true;
+  $('btnWebSerial').disabled = true;
+  $('btnDisconnect').disabled = false;
+  $('btnHandshake').disabled = false;
+  $('btnStatus').disabled = true; // no raw MSR over Web Serial
+  log(`Web Serial 已打开 @${baudRate}，发送握手`, 'ok');
+}
+
+/* ========== Wire UI ========== */
+renderSteps();
+detectEnv();
+log('就绪。插上 CH340 写频线 + OTG，点「选择设备并连接」。', 'info');
+log('若 claimInterface 失败：该机内核已绑定 CH340，WebUSB 无法接管。', 'warn');
+
+$('btnConnect').addEventListener('click', () => { connect().catch((e) => log(String(e), 'err')); });
+$('btnWebSerial').addEventListener('click', () => { connectWebSerial().catch((e) => log(String(e), 'err')); });
+$('btnDisconnect').addEventListener('click', () => { disconnect().catch(() => {}); });
+$('btnHandshake').addEventListener('click', () => { sendHandshake().catch((e) => log(String(e), 'err')); });
+$('btnStatus').addEventListener('click', () => { readModemStatus().catch(() => {}); });
+
+navigator.usb.addEventListener('disconnect', (e) => {
+  if (state.device && e.device === state.device) {
+    log('USB 设备已拔出', 'warn');
+    state.connected = false;
+    $('btnConnect').disabled = false;
+    $('btnDisconnect').disabled = true;
+    $('btnHandshake').disabled = true;
+    $('btnStatus').disabled = true;
+  }
+});
+
+window.addEventListener('beforeunload', () => {
+  if (state.device && state.device.opened) {
+    try { state.device.close(); } catch {}
+  }
+});
+</script>
+</body>
+</html>

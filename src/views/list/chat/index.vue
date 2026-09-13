@@ -5,14 +5,12 @@
             <template #title>
                 【无法正常使用】【开发中！！！】无线电聊天（需使用<a-link @click="downloadFirmware">这个</a-link>固件）
             </template>
-            <div style="display: flex; align-items: center; margin: 10px;">
+            <div class="chat-toolbar">
                 <span>呼号：</span>
-                <a-input v-model="state.callsign" style="width: 200px !important;" />
-                &nbsp;&nbsp;&nbsp;
+                <a-input v-model="state.callsign" class="chat-field" />
                 <span>设备号：</span>
                 <a-input-number :min="0" :max="15" v-model="state.devid"
-                    style="width: 200px !important;"></a-input-number>
-                &nbsp;&nbsp;&nbsp;
+                    class="chat-field"></a-input-number>
                 <a-button @click="connectIt" type="primary">{{ state.startChat }}</a-button>
                 <!-- await eeprom_init(appStore.connectPort); -->
             </div>
@@ -198,6 +196,18 @@ export default {
 </script>
 
 <style scoped lang="less">
+.chat-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 10px;
+}
+
+.chat-field {
+    width: min(200px, 100%) !important;
+}
+
 :deep(::-webkit-scrollbar-thumb) {
     border-radius: 0 !important;
 }

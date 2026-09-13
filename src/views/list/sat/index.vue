@@ -1,6 +1,6 @@
 <template>
   <div class="container">
-    <a-modal width="650px" v-model:visible="state.selfSatModal" @ok="addSelfSat">
+    <a-modal class="self-sat-modal" v-model:visible="state.selfSatModal" @ok="addSelfSat">
       <template #title>
         {{ $t("sat.selfSatInfo") }}
       </template>
@@ -31,7 +31,7 @@
             <a-form-item v-show="state.showHide >= 5" :label-col-style="{ width: '25%' }" field="dtCustom"
               label="自定义时间">
               <div>
-                <a-date-picker style="width: 220px; margin: 0 24px 24px 0;" show-time
+                <a-date-picker style="width: min(220px, 100%); margin: 0 0 12px 0;" show-time
                   :time-picker-props="{ defaultValue: '00:00:00' }" format="YYYY-MM-DD HH:mm:ss"
                   v-model="state.dtCustom" />
                 &nbsp;&nbsp;<t-button size="small" theme="success" @click="writeTime">写入时间到台站</t-button>
@@ -71,7 +71,7 @@
             </a-form-item>
             <a-form-item v-show="state.showHide >= 5" :label-col-style="{ width: '25%' }" field="passCustom"
               label="自定义过境时间">
-              <a-range-picker style="width: 360px; margin: 0 24px 24px 0;" show-time
+              <a-range-picker style="width: min(360px, 100%); margin: 0 0 12px 0;" show-time
                 :time-picker-props="{ defaultValue: ['00:00:00', '00:00:00'] }" format="YYYY-MM-DD HH:mm:ss"
                 v-model="state.passCustom" />
             </a-form-item>
@@ -98,7 +98,7 @@
             </a-form-item>
             <a-divider />
             <div id="statusArea"
-              style="height: 20em; background-color: var(--color-bg-3); color: var(--color-text-3); overflow: auto; padding: 20px"
+              style="height: 16em; min-height: 160px; background-color: var(--color-bg-3); color: var(--color-text-3); overflow: auto; padding: 12px"
               v-html="state.status"></div>
           </a-spin>
         </a-card>

@@ -6,15 +6,26 @@
         <a-spin :loading="state.loading" tip="写入中..." style="width: 100%;">
           <a-card class="general-card" :title="$t('menu.image') + $t('global.onStart')">
             <div id="canvasDiv" style="zoom: 250%; display: none"></div>
-            <div>
-              <table style="padding: 0; margin: 0; border-spacing: 0">
+            <div class="pixel-matrix-wrap">
+              <table class="pixel-matrix" style="padding: 0; margin: 0; border-spacing: 0">
                 <tr v-for="col, y in state.matrix">
-                  <td @mousedown="state.mousedown = true; changePixel(x, y)" @mouseup="state.mousedown = false;" @mouseover="changePixel(x, y)" v-for="row, x in col" :style="'background-color: ' + row + '; height: 5px; width: 3.5px;'"></td>
+                  <td
+                    @mousedown="state.mousedown = true; changePixel(x, y)"
+                    @mouseup="state.mousedown = false;"
+                    @mouseover="changePixel(x, y)"
+                    @touchstart.prevent="state.mousedown = true; changePixel(x, y)"
+                    @touchend="state.mousedown = false;"
+                    @touchmove.prevent="onTouchPaint($event)"
+                    v-for="row, x in col"
+                    :data-x="x"
+                    :data-y="y"
+                    :style="'background-color: ' + row + '; height: 5px; width: 3.5px;'"
+                  ></td>
                 </tr>
               </table>
             </div>
             <br>
-            色彩阈值：<t-slider v-model="state.threshold" :max="256" style="width: 200px;" @change-end="changeThreshold" />
+            色彩阈值：<t-slider v-model="state.threshold" :max="256" class="threshold-slider" @change-end="changeThreshold" />
             <br>
             <a-space>
               <a-button @click="selectFile">{{ $t('tool.selectImage') }}</a-button>
@@ -80,6 +91,14 @@ const changePixel = (x: int, y: int) => {
     matrix[y][x] = state.matrix[y][x] == '#fff' ? '#000' : '#fff'
     state.matrix = matrix
   }
+}
+
+const onTouchPaint = (event: TouchEvent) => {
+  const touch = event.touches[0]
+  if (!touch) return
+  const target = document.elementFromPoint(touch.clientX, touch.clientY) as HTMLElement | null
+  if (!target || !target.dataset || target.dataset.x === undefined) return
+  changePixel(parseInt(target.dataset.x, 10), parseInt(target.dataset.y, 10))
 }
 
 const useImg = (url: string) => {
@@ -273,6 +292,26 @@ const changeThreshold = () => {
 </script>
 
 <style scoped lang="less">
+  .pixel-matrix-wrap {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid var(--color-border);
+    background: var(--color-bg-3);
+    padding: 4px;
+  }
+
+  .pixel-matrix {
+    touch-action: none;
+    user-select: none;
+  }
+
+  .threshold-slider {
+    width: min(200px, 100%);
+    vertical-align: middle;
+  }
+
   .container {
     padding: 0 20px 20px 20px;
     :deep(.arco-list-content) {

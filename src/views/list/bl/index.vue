@@ -11,7 +11,7 @@
         </template>
         <a-row style="margin-bottom: 16px">
           <a-col :span="12">
-            <a-space style="width: 130%">
+            <a-space style="width: 100%">
               <!-- <a-button type="primary" @click="readConfig">
                 <template #icon>
                   <icon-plus />
@@ -55,7 +55,7 @@
         <a-button style="margin-bottom: 10px;" @click="selectFile">{{ state.binaryFile ? state.binaryName : $t('tool.selectFirmware') }}</a-button>（{{ $t('bl.drag') }}）
         <br>
         <t-space break-line>
-          <t-card draggable="true" :ondragstart="()=>{state.nowDrag = index}" v-for="(item, index) in state.rom" :title="item.binaryName" :bordered="true" hover-shadow :style="{ width: '400px' }">
+          <t-card class="rom-card" draggable="true" :ondragstart="()=>{state.nowDrag = index}" v-for="(item, index) in state.rom" :title="item.binaryName" :bordered="true" hover-shadow>
             <template #actions>
               <div :style="'width: 10px; height: 10px; background-color: ' + item.color + ';'"></div>
             </template>
@@ -74,7 +74,6 @@
   import { eeprom_write, eeprom_reboot, eeprom_init, eeprom_read, uint8ArrayToString, stringToUint8Array, check_eeprom, hexReverseStringToUint8Array, unpack } from '@/utils/serial.js';
   import { onMounted, reactive, nextTick } from 'vue';
 
-  const appStore = useAppStore();
   const { loading, setLoading } = useLoading(true);
 
   const state : any = reactive({
@@ -328,6 +327,11 @@
   </script>
   
   <style scoped lang="less">
+    .rom-card {
+      width: 400px;
+      max-width: 100%;
+    }
+
     :deep(::-webkit-scrollbar-thumb){
       border-radius: 0 !important;
     }

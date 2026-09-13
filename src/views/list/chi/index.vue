@@ -7,8 +7,8 @@
           <template #title>
             <span @click="()=>{state.showHide += 1}">{{ $t('menu.font') + $t('global.onStart') }}</span>
           </template>
-          <a-space>
-            <t-card bordered style="width: 420px;">
+          <a-space class="font-card-space">
+            <t-card bordered class="font-card">
               <template #header>
                 {{ $t('tool.fontwrite') }}
                 <div>
@@ -184,6 +184,16 @@ const restore = async(type: any = 1) => {
 </script>
 
 <style scoped lang="less">
+  .font-card {
+    width: 420px;
+    max-width: 100%;
+  }
+
+  .font-card-space {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
   .container {
     padding: 0 20px 20px 20px;
     :deep(.arco-list-content) {

@@ -117,7 +117,7 @@ export default {
   'tool.scanqr': 'Scan QR Code',
   'tool.scannotice': 'Uploaded location information will be cached by the server for 10 minutes',
   'tool.scaned': 'Scanned and uploaded',
-  'global.nosupport': 'Current browser does not support WebSerial function, please use Chrome, Edge, Opera browser.',
+  'global.nosupport': 'This browser lacks Web Serial/WebUSB. Use Chrome, Edge, or Opera. On Android use Chrome with an OTG programming cable.',
   'global.connectFail': 'Connect Failure',
   'global.handshakeFail': 'Handshake Failure',
   'menu.workshop': 'Workshop',

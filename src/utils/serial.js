@@ -1,3 +1,5 @@
+import { hasWebUsbSupport, requestWebUsbCh341Port } from './webusb-ch341.js';
+
 const FONT_MAPPING_117 = {
     128: {
         1: '一', 2: '乙', 3: '二', 4: '十', 5: '丁', 6: '厂', 7: '七', 8: '卜', 9: '八', 10: '人', 11: '入', 12: '乂',
@@ -766,32 +768,49 @@ function globalRelease(target = 'all'){
 }
 
 async function connect() {
-    if (!('serial' in navigator)) {
-        alert('当前浏览器不支持网页串口功能，请使用 Chrome, Edge, Opera 浏览器。');
-        return null;
-    }
-
-    let port = undefined
-
-    try {
-        port = await navigator.serial.requestPort();
-    } catch(error) {
-        console.log('!!! ' + error)
-        return null;
-    }
-
     const baudRate = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 38400;
+    const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
 
-    try {
-        await port.open({ baudRate });
-        return port;
-    } catch (error) {
-        if(port.connected && port.readable && port.writable && !port.readable.locked && !port.writable.locked){
-            return port;
+    // 1) Native Web Serial (desktop Chrome/Edge; rare on Android)
+    if ('serial' in navigator) {
+        let port = undefined
+        try {
+            port = await navigator.serial.requestPort();
+        } catch(error) {
+            console.log('Web Serial requestPort: ' + error)
+            // Desktop: user cancelled or none selected — stop here.
+            // Android: serial often lists no USB device, fall through to WebUSB.
+            if (!isAndroid) {
+                return null;
+            }
         }
-        console.error('Error connecting to the serial port:', error);
-        return null;
+        if (port) {
+            try {
+                await port.open({ baudRate });
+                return port;
+            } catch (error) {
+                if(port.connected && port.readable && port.writable && !port.readable.locked && !port.writable.locked){
+                    return port;
+                }
+                console.error('Error connecting to the serial port:', error);
+                return null;
+            }
+        }
     }
+
+    // 2) WebUSB CH340/CH341 fallback (Android Chrome) — EXPERIMENTAL, see README
+    if (hasWebUsbSupport()) {
+        try {
+            return await requestWebUsbCh341Port(baudRate);
+        } catch (error) {
+            console.error('WebUSB CH341 connect failed:', error);
+            alert(String(error && error.message ? error.message : error));
+            return null;
+        }
+    }
+
+    alert('当前浏览器不支持网页串口/USB 串口功能，请使用 Chrome, Edge, Opera 浏览器。');
+    return null;
 }
 
 async function disconnect(port) {
