@@ -8,6 +8,8 @@
  * when available. See README「平台支持」.
  */
 
+import { logWebUsb, fmtHex } from './serial-log.js';
+
 const CH341 = {
   REQ_READ_VERSION: 0x5f,
   REQ_WRITE_REG: 0x9a,
@@ -92,8 +94,10 @@ async function ctrlOut(dev, request, value, index, data) {
     ? await dev.controlTransferOut(setup, data)
     : await dev.controlTransferOut(setup);
   if (res.status !== 'ok') {
+    logWebUsb(`controlOut 0x${request.toString(16)} status=${res.status}`);
     throw new Error(`USB control OUT 0x${request.toString(16)} failed: ${res.status}`);
   }
+  logWebUsb(`controlOut 0x${request.toString(16)} ok`);
 }
 
 async function ctrlIn(dev, request, value, index, length) {
@@ -108,9 +112,12 @@ async function ctrlIn(dev, request, value, index, length) {
     length
   );
   if (res.status !== 'ok') {
+    logWebUsb(`controlIn 0x${request.toString(16)} status=${res.status}`);
     throw new Error(`USB control IN 0x${request.toString(16)} failed: ${res.status}`);
   }
-  return new Uint8Array(res.data.buffer, res.data.byteOffset, res.data.byteLength);
+  const out = new Uint8Array(res.data.buffer, res.data.byteOffset, res.data.byteLength);
+  logWebUsb(`controlIn 0x${request.toString(16)} ${fmtHex(out, 8)}`);
+  return out;
 }
 
 function parseEndpoints(dev) {
@@ -205,6 +212,10 @@ class WebUsbCh341Port {
     this._readable = null;
     this._writable = null;
     this._controlChain = Promise.resolve();
+    this._transferInCount = 0;
+    this._transferOutCount = 0;
+    this.chip = 'CH341';
+    logWebUsb(`open: CH341 version=0x${version.toString(16)} iface=${eps.ifaceNum} epIn=${eps.epIn} epOut=${eps.epOut}`);
     this._readLoop();
   }
 
@@ -248,10 +259,13 @@ class WebUsbCh341Port {
           let offset = 0;
           while (offset < data.length) {
             const slice = data.subarray(offset, offset + this._epOutSize);
+            this._transferOutCount += 1;
             const res = await this._device.transferOut(this._epOut, slice);
             if (res.status !== 'ok') {
+              logWebUsb(`transferOut#${this._transferOutCount} 失败 status=${res.status}`);
               throw new Error(`USB bulk OUT failed: ${res.status}`);
             }
+            logWebUsb(`transferOut#${this._transferOutCount} ${fmtHex(slice)}`);
             offset += slice.length;
           }
         },
@@ -292,6 +306,7 @@ class WebUsbCh341Port {
 
   async close() {
     if (!this._opened) return;
+    logWebUsb('close()');
     this._opened = false;
     try {
       if (this._readable) {
@@ -341,21 +356,32 @@ class WebUsbCh341Port {
   }
 
   async _readLoop() {
+    logWebUsb('读循环已启动');
     while (this._opened && this._device.opened) {
       try {
         const res = await this._device.transferIn(this._epIn, this._epInSize);
         if (!this._opened) break;
-        if (res.status !== 'ok') continue;
+        this._transferInCount += 1;
+        if (res.status !== 'ok') {
+          logWebUsb(`transferIn#${this._transferInCount} status=${res.status}`);
+          continue;
+        }
         if (res.data && res.data.byteLength) {
           const bytes = new Uint8Array(
             res.data.buffer,
             res.data.byteOffset,
             res.data.byteLength
           );
-          this._enqueue(bytes.slice());
+          const chunk = bytes.slice();
+          // 只记录前若干次，避免日志淹没。
+          if (this._transferInCount <= 60) {
+            logWebUsb(`transferIn#${this._transferInCount} ${fmtHex(chunk)}`);
+          }
+          this._enqueue(chunk);
         }
       } catch (e) {
         if (this._opened) {
+          logWebUsb(`transferIn 错误: ${e && e.name} ${e && e.message}`);
           console.warn('WebUSB bulk IN error', e);
         }
         break;
@@ -378,7 +404,30 @@ export async function requestWebUsbCh341Port(baudRate = 38400) {
     throw new Error('WebUSB is not available');
   }
 
-  const device = await navigator.usb.requestDevice({ filters: SUPPORTED_USB });
+  logWebUsb(`requestWebUsbCh341Port baud=${baudRate} isSecureContext=${typeof isSecureContext !== 'undefined' ? isSecureContext : 'n/a'}`);
+
+  let device;
+  try {
+    device = await navigator.usb.requestDevice({ filters: SUPPORTED_USB });
+  } catch (e) {
+    logWebUsb(`requestDevice 失败: ${e && e.name} ${e && e.message}`);
+    throw e;
+  }
+  logWebUsb(`requestDevice ok vid=0x${device.vendorId.toString(16)} pid=0x${device.productId.toString(16)}`);
+  // 某些安卓 Chrome / polyfill 的 USBDevice 没有 EventTarget 接口，不能直接 addEventListener。
+  try {
+    if (typeof device.addEventListener === 'function') {
+      device.addEventListener('disconnect', () => {
+        logWebUsb('device disconnect 事件');
+      });
+    } else if (navigator.usb && typeof navigator.usb.addEventListener === 'function') {
+      navigator.usb.addEventListener('disconnect', (event) => {
+        if (event && event.device === device) {
+          logWebUsb('device disconnect 事件');
+        }
+      });
+    }
+  } catch {}
   await device.open();
   if (device.configuration === null) {
     await device.selectConfiguration(1);
@@ -387,7 +436,9 @@ export async function requestWebUsbCh341Port(baudRate = 38400) {
   const eps = parseEndpoints(device);
   try {
     await device.claimInterface(eps.ifaceNum);
+    logWebUsb(`claimInterface(${eps.ifaceNum}) ok`);
   } catch (e) {
+    logWebUsb(`claimInterface(${eps.ifaceNum}) 失败: ${e && e.name} ${e && e.message}`);
     try {
       await device.close();
     } catch {}
@@ -400,8 +451,10 @@ export async function requestWebUsbCh341Port(baudRate = 38400) {
 
   try {
     const version = await ch341Configure(device, baudRate);
+    logWebUsb(`CH341 初始化完成 version=0x${version.toString(16)} baud=${baudRate}`);
     return new WebUsbCh341Port(device, eps, version);
   } catch (e) {
+    logWebUsb(`CH341 初始化失败: ${e && e.name} ${e && e.message}`);
     try {
       await device.releaseInterface(eps.ifaceNum);
     } catch {}

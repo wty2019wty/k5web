@@ -1,4 +1,5 @@
 import { hasWebUsbSupport, requestWebUsbCh341Port } from './webusb-ch341.js';
+import { logWebUsb, fmtHex, setDebugTransport, isDebugVerbose } from './serial-log.js';
 
 const FONT_MAPPING_117 = {
     128: {
@@ -751,6 +752,93 @@ const FONT_MAPPING_118_MAP = ['啊', '阿', '埃', '挨', '哎', '唉', '哀', '
 let globalWriteReader = null
 let globalReadReader = null
 
+// 桌面 Web Serial 原生流没有底层日志；包装 reader/writer，对齐 WebUSB 的 transferIn/Out。
+// 用 WeakMap 按底层流缓存包装对象：createDiagPort 每次读取 readable/writable 都会重建
+// 包装对象，若只在包装对象上打标记则守卫永远不命中，也无法保证流对象身份稳定。
+const readableDiagCache = new WeakMap();
+const writableDiagCache = new WeakMap();
+
+function wrapReadableForLog(readable) {
+    if (!readable) return readable;
+    const cached = readableDiagCache.get(readable);
+    if (cached) return cached;
+    const wrapped = {
+        get locked() { return readable.locked; },
+        getReader(...args) {
+            const reader = readable.getReader(...args);
+            const origRead = reader.read.bind(reader);
+            let n = 0;
+            reader.read = async (...a) => {
+                const result = await origRead(...a);
+                try {
+                    if (result && !result.done && result.value && result.value.length) {
+                        n += 1;
+                        logWebUsb(`serialIn#${n} ${fmtHex(result.value)}`);
+                    }
+                } catch {}
+                return result;
+            };
+            return reader;
+        },
+        cancel: (...a) => readable.cancel(...a),
+        get pipeTo() { return readable.pipeTo.bind(readable); },
+        get pipeThrough() { return readable.pipeThrough.bind(readable); },
+        get tee() { return readable.tee.bind(readable); },
+        get values() { return readable.values.bind(readable); },
+        [Symbol.asyncIterator]: (...a) => readable[Symbol.asyncIterator](...a),
+    };
+    readableDiagCache.set(readable, wrapped);
+    return wrapped;
+}
+
+function wrapWritableForLog(writable) {
+    if (!writable) return writable;
+    const cached = writableDiagCache.get(writable);
+    if (cached) return cached;
+    const wrapped = {
+        get locked() { return writable.locked; },
+        getWriter(...args) {
+            const writer = writable.getWriter(...args);
+            const origWrite = writer.write.bind(writer);
+            const origClose = writer.close.bind(writer);
+            const origAbort = writer.abort.bind(writer);
+            let n = 0;
+            writer.write = async (chunk, ...a) => {
+                n += 1;
+                try {
+                    logWebUsb(`serialOut#${n} ${fmtHex(chunk)}`);
+                } catch {}
+                return origWrite(chunk, ...a);
+            };
+            writer.close = (...a) => origClose(...a);
+            writer.abort = (...a) => origAbort(...a);
+            return writer;
+        },
+        close: (...a) => writable.close(...a),
+        abort: (...a) => writable.abort(...a),
+    };
+    writableDiagCache.set(writable, wrapped);
+    return wrapped;
+}
+
+function createDiagPort(port) {
+    if (!port || port.__diagPort) return port;
+    const diag = new Proxy(port, {
+        get(target, prop, receiver) {
+            if (prop === '__diagPort') return true;
+            if (prop === 'readable' && target.readable) {
+                return wrapReadableForLog(target.readable);
+            }
+            if (prop === 'writable' && target.writable) {
+                return wrapWritableForLog(target.writable);
+            }
+            const value = target[prop];
+            return typeof value === 'function' ? value.bind(target) : value;
+        },
+    });
+    return diag;
+}
+
 function globalRelease(target = 'all'){
     try {
         if(target != 'read'){
@@ -771,12 +859,18 @@ async function connect() {
     const baudRate = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 38400;
     const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
 
+    // Desktop prefers Web Serial; Android may fall through to WebUSB below.
+    setDebugTransport(isAndroid ? 'webusb' : ('serial' in navigator ? 'webserial' : 'webusb'));
+    logWebUsb(`connect() baud=${baudRate} android=${isAndroid} webSerial=${'serial' in navigator} webUsb=${hasWebUsbSupport()}`);
+
     // 1) Native Web Serial (desktop Chrome/Edge; rare on Android)
     if ('serial' in navigator) {
         let port = undefined
         try {
             port = await navigator.serial.requestPort();
+            logWebUsb(`requestPort ok usbVendorId=0x${(port?.usbVendorId ?? 0).toString(16)} usbProductId=0x${(port?.usbProductId ?? 0).toString(16)}`);
         } catch(error) {
+            logWebUsb(`requestPort 失败: ${error?.name || ''} ${error?.message || error}`);
             console.log('Web Serial requestPort: ' + error)
             // Desktop: user cancelled or none selected — stop here.
             // Android: serial often lists no USB device, fall through to WebUSB.
@@ -787,11 +881,16 @@ async function connect() {
         if (port) {
             try {
                 await port.open({ baudRate });
-                return port;
+                logWebUsb(`port.open baud=${baudRate} ok readable=${!!port.readable} writable=${!!port.writable}`);
+                setDebugTransport('webserial');
+                return createDiagPort(port);
             } catch (error) {
                 if(port.connected && port.readable && port.writable && !port.readable.locked && !port.writable.locked){
-                    return port;
+                    logWebUsb(`port.open 失败但流已可用: ${error?.message || error}`);
+                    setDebugTransport('webserial');
+                    return createDiagPort(port);
                 }
+                logWebUsb(`port.open 失败: ${error?.name || ''} ${error?.message || error}`);
                 console.error('Error connecting to the serial port:', error);
                 return null;
             }
@@ -801,8 +900,10 @@ async function connect() {
     // 2) WebUSB CH340/CH341 fallback (Android Chrome) — EXPERIMENTAL, see README
     if (hasWebUsbSupport()) {
         try {
+            setDebugTransport('webusb');
             return await requestWebUsbCh341Port(baudRate);
         } catch (error) {
+            logWebUsb(`WebUSB CH341 connect failed: ${error?.name || ''} ${error?.message || error}`);
             console.error('WebUSB CH341 connect failed:', error);
             alert(String(error && error.message ? error.message : error));
             return null;
@@ -815,15 +916,19 @@ async function connect() {
 
 async function disconnect(port) {
     try {
-        if (port && port.readable) {
+        if (port && (port.readable || port.connected)) {
             // Close the port if it's open
+            logWebUsb('disconnect()');
             globalRelease()
             await port.close();
+            logWebUsb('disconnect ok');
             console.log('Serial port disconnected.');
         } else {
+            logWebUsb('disconnect: port 未打开');
             console.warn('Serial port is not open.');
         }
     } catch (error) {
+        logWebUsb(`disconnect 失败: ${error?.name || ''} ${error?.message || error}`);
         console.error('Error closing the serial port:', error);
     }
 }
@@ -855,6 +960,7 @@ async function rawWrite(port, bytes) {
     const writer = port.writable.getWriter();
     globalWriteReader = writer;
     try {
+        logWebUsb(`写出 rawWrite ${bytes.length}B ${fmtHex(bytes, 16)}`);
         const CHUNK = 256;
         for (let offset = 0; offset < bytes.length; offset += CHUNK) {
             await writer.write(bytes.slice(offset, offset + CHUNK));
@@ -886,6 +992,9 @@ async function rawReadOnce(port, timeoutMs) {
         ]);
         if (result && result.done) {
             throw new Error('Serial stream closed');
+        }
+        if (result?.value?.length) {
+            logWebUsb(`读入 rawRead ${fmtHex(result.value)}`);
         }
         return result?.value;
     } finally {
@@ -1138,6 +1247,8 @@ async function readPacket(port, expectedData, timeout = 1000) {
     let buffer = new Uint8Array();
     let timeoutId; // Store the timeout ID to clear it later
 
+    logWebUsb(`读入 readPacket(0x${expectedData.toString(16)}) 等待 timeout=${timeout}ms`);
+
     try {
         return await new Promise((resolve, reject) => {
             // Event listener to handle incoming data
@@ -1145,8 +1256,13 @@ async function readPacket(port, expectedData, timeout = 1000) {
                 if (done) {
                     // If `done` is true, then the reader has been cancelled
                     reject('Reader has been cancelled.');
+                    logWebUsb(`readPacket reader cancelled, buf=${fmtHex(buffer, 24)}`);
                     console.log('Reader has been cancelled. Current Buffer:', buffer, uint8ArrayToHexString(buffer));
                     return;
+                }
+
+                if (isDebugVerbose() && value && value.length) {
+                    logWebUsb(`读入 recv ${fmtHex(value)}`);
                 }
 
                 // Append the new data to the buffer
@@ -1175,11 +1291,13 @@ async function readPacket(port, expectedData, timeout = 1000) {
                             // Continue if the packet is not the expected data
                             const deobfuscatedData = unpacketize(packet);
                             if (deobfuscatedData[0] !== expectedData) {
+                                logWebUsb(`readPacket unexpected cmd=0x${deobfuscatedData[0]?.toString(16)}`);
                                 console.log('Unexpected packet received:', deobfuscatedData);
                                 continue;
                             }
 
                             // Resolve with the deobfuscated data if it matches the expected data
+                            logWebUsb(`读入 ok len=${deobfuscatedData.length} ${fmtHex(deobfuscatedData, 16)}`);
                             resolve(deobfuscatedData);
                             return;
                         } else {
@@ -1210,21 +1328,18 @@ async function readPacket(port, expectedData, timeout = 1000) {
 
             // Set the timeout to reject the Promise if the packet is not received within the specified time
             timeoutId = setTimeout(() => {
-                reader.cancel().then(() => {
-                    reject('Timeout: Packet not received within the specified time.');
-                    return;
-                }).catch(error_2 => {
-                    console.error('Error cancelling reader:', error_2);
-                    reject(error_2);
-                    return;
-                });
+                logWebUsb(`读入 超时(0x${expectedData.toString(16)}) ${timeout}ms，已收 ${buffer.length}B`);
+                // 先 reject 再异步 cancel：WebUSB 上等待 reader.cancel() 可能永久挂起，
+                // 那样会导致整个 Promise 永不 settle（界面一直转圈）。
+                reject(new Error('Timeout: Packet not received within the specified time.'));
+                try { reader.cancel().catch(() => {}); } catch {}
             }, timeout);
         });
     } finally {
         // Clear the timeout when the promise is settled (resolved or rejected)
         clearTimeout(timeoutId);
         // Release the reader in the finally block to ensure it is always released
-        reader.releaseLock();
+        try { reader.releaseLock(); } catch {}
     }
 }
 
@@ -1243,6 +1358,8 @@ async function readPacketNoVerify(port, timeout = 1000) {
     let buffer = new Uint8Array();
     let timeoutId; // Store the timeout ID to clear it later
 
+    logWebUsb(`读入 readPacketNoVerify 等待 timeout=${timeout}ms`);
+
     try {
         return await new Promise((resolve, reject) => {
             // Event listener to handle incoming data
@@ -1250,8 +1367,13 @@ async function readPacketNoVerify(port, timeout = 1000) {
                 if (done) {
                     // If `done` is true, then the reader has been cancelled
                     reject('Reader has been cancelled.');
+                    logWebUsb(`readPacketNoVerify reader cancelled, buf=${fmtHex(buffer, 24)}`);
                     console.log('Reader has been cancelled. Current Buffer:', buffer, uint8ArrayToHexString(buffer));
                     return;
+                }
+
+                if (isDebugVerbose() && value && value.length) {
+                    logWebUsb(`读入 recv ${fmtHex(value)}`);
                 }
 
                 // Append the new data to the buffer
@@ -1260,6 +1382,7 @@ async function readPacketNoVerify(port, timeout = 1000) {
                 // Strip the beginning of the buffer until the first 0xAB byte
                 // This is done to ensure that the buffer does not contain any incomplete packets
                 while (buffer.length > 0 && buffer.indexOf(0xAB) != -1 && buffer.indexOf(0xCD) != -1) {
+                    logWebUsb(`读入 ok ${fmtHex(buffer, 24)}`);
                     resolve(true);
                     return;
                 }
@@ -1281,21 +1404,16 @@ async function readPacketNoVerify(port, timeout = 1000) {
 
             // Set the timeout to reject the Promise if the packet is not received within the specified time
             timeoutId = setTimeout(() => {
-                reader.cancel().then(() => {
-                    reject('Timeout: Packet not received within the specified time.');
-                    return;
-                }).catch(error_2 => {
-                    console.error('Error cancelling reader:', error_2);
-                    reject(error_2);
-                    return;
-                });
+                logWebUsb(`读入 超时(NoVerify) ${timeout}ms，已收 ${buffer.length}B`);
+                reject(new Error('Timeout: Packet not received within the specified time.'));
+                try { reader.cancel().catch(() => {}); } catch {}
             }, timeout);
         });
     } finally {
         // Clear the timeout when the promise is settled (resolved or rejected)
         clearTimeout(timeoutId);
         // Release the reader in the finally block to ensure it is always released
-        reader.releaseLock();
+        try { reader.releaseLock(); } catch {}
     }
 }
 
@@ -1330,15 +1448,33 @@ async function sendPacket(port, data) {
         // send packet
         //console.log('Sending packet:', packet);
 
-        const chunkedPacket = chunkUint8Array(packet, 64);
+        // WebUSB(安卓 CH340) 路径：整帧一次写出。桌面 Web Serial 依赖操作系统
+        // 串口缓冲做流控，可安全地按 64B 分片；WebUSB 直接下发 USB 包，分片间隔
+        // 过短会让 CH340 的 UART FIFO 丢字节，导致电台收不到完整命令而“卡住”。
+        const isWebUsb = port && typeof port.chip === 'string';
+        const chunkSize = isWebUsb ? packet.length : 64;
+        const chunkedPacket = chunkUint8Array(packet, Math.max(1, chunkSize));
+        if (isWebUsb) {
+            logWebUsb(`写出 sendPacket 帧长=${packet.length} 单次写出`);
+        } else {
+            logWebUsb(`写出 sendPacket 帧长=${packet.length} chunks=${chunkedPacket.length} ${fmtHex(packet, 16)}`);
+        }
         for(let i = 0; i < chunkedPacket.length; i++){
             await writer.write(chunkedPacket[i]);
-            await sleep(1); // 解决部分浏览器更新固件出现异常的问题 
+            // WebUSB 整帧已单次写出，无需再分片间隔；桌面 Web Serial 按 64B 分片时保留短延迟。
+            if (!isWebUsb) await sleep(1);
         }
+        if (!isWebUsb) logWebUsb('写出 完成');
+
+        // Give the WebUSB read loop a tick to re-arm transferIn before the
+        // radio starts answering — otherwise the first bytes (ab cd) can
+        // sit in the CH340 FIFO and the rest of the frame never lands cleanly.
+        if (isWebUsb) await sleep(8);
 
         // close writer
         writer.releaseLock();
     } catch (error) {
+        logWebUsb(`写出 失败: ${error?.name || ''} ${error?.message || error}`);
         console.error('Error sending packet:', error);
         console.log('Error sending packet. Aborting.');
         return Promise.reject(error);
