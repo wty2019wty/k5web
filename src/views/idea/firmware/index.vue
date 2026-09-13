@@ -5,9 +5,9 @@
         <a-col :span="24">
             <a-card class="general-card">
                 <template #title>
-                  <div style="display: flex; gap: 1rem; align-items: flex-end;">
+                  <div class="idea-header">
                     {{ $t('menu.firmware') }}
-                    <t-input size="small" style="width: 200px;" v-model="state.title" @enter="searchIt">
+                    <t-input size="small" class="idea-search" v-model="state.title" @enter="searchIt">
                       <template #suffixIcon>
                         <search-icon :style="{ cursor: 'pointer' }" @click="searchIt"/>
                       </template>
@@ -263,6 +263,18 @@ const searchIt = () => {
   </script>
   
   <style scoped lang="less">
+    .idea-header {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      align-items: flex-end;
+      max-width: 100%;
+    }
+
+    .idea-search {
+      width: min(200px, 100%);
+    }
+
     .container {
       padding: 0 20px 20px 20px;
       :deep(.arco-list-content) {

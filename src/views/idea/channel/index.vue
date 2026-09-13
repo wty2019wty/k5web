@@ -5,9 +5,9 @@
         <a-col :span="24">
             <a-card class="general-card">
                 <template #title>
-                  <div style="display: flex; gap: 1rem; align-items: flex-end;">
+                  <div class="idea-header">
                     {{ $t('menu.channel') }}
-                    <t-input size="small" style="width: 200px;" v-model="state.title" @enter="searchIt">
+                    <t-input size="small" class="idea-search" v-model="state.title" @enter="searchIt">
                       <template #suffixIcon>
                         <search-icon :style="{ cursor: 'pointer' }" @click="searchIt"/>
                       </template>
@@ -49,7 +49,7 @@
             </a-card>
         </a-col>
       </a-row>
-      <t-drawer v-model:visible="state.showPanel" size="50%" header="我的分享" :footer="false">
+      <t-drawer v-model:visible="state.showPanel" size="90%" header="我的分享" :footer="false">
         <div style="display: flex; align-items: center; justify-content: space-between;">
           <t-button style="margin: 10px" @click="showUpload">上传新分享</t-button>
           <t-button :loading="state.refLoading" shape="circle" theme="outline" @click="refit">
@@ -76,7 +76,7 @@
           </t-list-item>
         </t-list>
       </t-drawer>
-      <t-drawer v-model:visible="state.showUpload" size="25%" header="上传新固件" :footer="false">
+      <t-drawer v-model:visible="state.showUpload" size="90%" header="上传新固件" :footer="false">
         <t-form
           :data="formData"
           reset-type="initial"
@@ -292,7 +292,19 @@ const searchIt = () => {
   </script>
   
   <style scoped lang="less">
-    .container {
+    .idea-header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: flex-end;
+    max-width: 100%;
+  }
+
+  .idea-search {
+    width: min(200px, 100%);
+  }
+
+  .container {
       padding: 0 20px 20px 20px;
       :deep(.arco-list-content) {
         overflow-x: hidden;

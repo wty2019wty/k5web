@@ -1,0 +1,418 @@
+// Mobile-first overrides for Android Chrome portrait (360–430px).
+// Keep desktop intact; all rules live inside max-width media queries.
+
+@mobile-max: 768px;
+
+// ---------- shared helpers ----------
+.mobile-wrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-full-width {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+// ---------- shell ----------
+@media screen and (max-width: @mobile-max) {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+
+  body {
+    font-size: 14px;
+    overscroll-behavior-y: contain;
+  }
+
+  button,
+  a,
+  .arco-btn,
+  .t-button,
+  .arco-menu-item,
+  .arco-tabs-tab {
+    touch-action: manipulation;
+  }
+
+  .container {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    max-width: 100%;
+    overflow-x: visible;
+  }
+
+  .general-card {
+    overflow: visible;
+
+    & > .arco-card-header {
+      padding: 14px 12px;
+    }
+
+    & > .arco-card-body {
+      padding: 0 12px 12px 12px;
+      overflow: visible;
+    }
+  }
+
+  .arco-card-body {
+    overflow: visible !important;
+  }
+
+  .container-breadcrumb {
+    margin: 10px 0 8px;
+    overflow-x: auto;
+    white-space: nowrap;
+
+    :deep(.arco-breadcrumb-item) {
+      font-size: 12px;
+    }
+  }
+
+  // navbar: keep Connect button on-screen; never clip silently
+  .layout-navbar {
+    .navbar {
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+      gap: 0;
+    }
+
+    .left-side {
+      padding-left: 10px;
+      flex-shrink: 0;
+
+      .arco-typography {
+        white-space: nowrap;
+      }
+
+      .arco-space {
+        gap: 8px !important;
+      }
+    }
+
+    .center-side {
+      display: none;
+    }
+
+    .right-side {
+      padding-right: 8px;
+      flex-shrink: 0;
+      margin: 0;
+      padding-left: 0;
+
+      li {
+        padding: 0 4px;
+        flex-shrink: 0;
+      }
+
+      // drop tertiary feedback link so Connect stays visible
+      li:first-child {
+        display: none;
+      }
+
+      .nav-btn {
+        font-size: 14px;
+        min-width: 32px;
+        height: 32px;
+        padding: 0 8px;
+      }
+
+      a.arco-btn,
+      .arco-btn {
+        height: 32px;
+        min-height: 32px;
+        padding: 0 10px;
+        font-size: 13px;
+        white-space: nowrap;
+        max-width: 46vw;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+    }
+  }
+
+  .layout-content {
+    min-height: 100vh;
+    overflow-x: hidden !important;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+
+  .layout-sider {
+    width: 260px !important;
+  }
+
+  .arco-drawer {
+    max-width: 100vw;
+
+    .arco-drawer-body {
+      padding: 12px;
+    }
+  }
+
+  // ---------- layout grid / toolbars ----------
+  .arco-row {
+    flex-wrap: wrap;
+
+    .arco-col,
+    .arco-col-12,
+    .arco-col-24 {
+      flex: 0 0 100%;
+      max-width: 100%;
+      min-width: 0;
+      text-align: left !important;
+    }
+  }
+
+  .arco-space {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center;
+    row-gap: 8px !important;
+    column-gap: 8px !important;
+    max-width: 100%;
+    width: auto;
+  }
+
+  .arco-space-item {
+    max-width: 100%;
+  }
+
+  // ensure action buttons are never clipped and remain tappable
+  .arco-btn,
+  .t-button {
+    max-width: 100%;
+  }
+
+  .arco-btn:not(.arco-btn-shape-circle),
+  .t-button:not(.t-is-icon) {
+    white-space: nowrap;
+  }
+
+  // stacked toolbar rows used by list pages
+  .arco-card-header + .arco-card-body > .arco-row,
+  .arco-card-body > .arco-row:first-child {
+    margin-bottom: 12px !important;
+  }
+
+  // ---------- forms ----------
+  .arco-form-item {
+    flex-direction: column;
+    align-items: stretch;
+    margin-bottom: 12px;
+  }
+
+  .arco-form-item-label-col {
+    width: auto !important;
+    flex: none !important;
+    margin-bottom: 4px;
+    text-align: left !important;
+  }
+
+  .arco-form-item-wrapper-col {
+    flex: 1 1 auto !important;
+    width: 100% !important;
+    margin-left: 0 !important;
+    min-width: 0 !important;
+  }
+
+  .arco-input-wrapper,
+  .arco-select,
+  .arco-input-number,
+  .arco-picker,
+  .arco-textarea-wrapper {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .arco-input-number,
+  .arco-picker {
+    width: 100% !important;
+  }
+
+  .arco-select-view {
+    width: 100%;
+  }
+
+  // ---------- modals / drawers / dialogs ----------
+  .arco-modal {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    margin: 0 auto;
+  }
+
+  .arco-modal-body {
+    max-height: calc(100vh - 160px);
+    overflow-y: auto;
+    word-break: break-word;
+  }
+
+  .t-dialog {
+    max-width: calc(100vw - 32px) !important;
+    width: calc(100vw - 32px) !important;
+  }
+
+  .t-dialog__body {
+    max-height: calc(100vh - 180px);
+    overflow-y: auto;
+  }
+
+  .arco-image-preview {
+    max-width: 100vw;
+  }
+
+  // ---------- tables ----------
+  .t-table,
+  .t-table__content,
+  .arco-table-container {
+    max-width: 100%;
+  }
+
+  .t-table__content {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .t-table {
+    min-width: 720px;
+  }
+
+  .ttable {
+    :deep(.t-table__affixed-header-elm-wrap) {
+      height: auto !important;
+    }
+  }
+
+  // ---------- page cards / images ----------
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .arco-card .t-card,
+  .arco-space .t-card {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .pixel-matrix-wrap {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid var(--color-border);
+    background: var(--color-bg-3);
+    padding: 4px;
+  }
+
+  .pixel-matrix {
+    touch-action: none;
+    user-select: none;
+  }
+
+  #statusArea,
+  .status-area {
+    padding: 12px !important;
+    font-size: 12px;
+    word-break: break-word;
+    height: auto !important;
+    min-height: 8em;
+    max-height: 40vh;
+  }
+
+  .flash-toolbar {
+    flex-wrap: wrap !important;
+    gap: 12px !important;
+  }
+
+  .banner {
+    padding: 12px 12px 0 !important;
+
+    img {
+      max-width: 100% !important;
+      height: auto !important;
+    }
+
+    .arco-typography-title {
+      word-break: break-word;
+    }
+  }
+
+  .arco-radio-group-button {
+    flex-wrap: wrap;
+  }
+
+  .t-slider {
+    width: 100% !important;
+    max-width: 240px;
+  }
+
+  .arco-tabs-content {
+    padding-top: 12px;
+  }
+
+  .fixed-settings {
+    right: 12px !important;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0)) !important;
+  }
+
+  // long link text in cards should wrap, not push buttons off-screen
+  .arco-typography,
+  .arco-typography-text,
+  .arco-typography-paragraph {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  .arco-link {
+    word-break: break-all;
+  }
+
+  // workshop list: actions must wrap under title instead of overflowing
+  .arco-list-item {
+    width: 100% !important;
+    flex-wrap: wrap;
+  }
+
+  .arco-list-item-action {
+    flex-wrap: wrap;
+    justify-content: flex-start !important;
+    margin-top: 8px;
+  }
+
+  .arco-card-header {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .arco-card-extra {
+    margin-right: 0 !important;
+    width: 100%;
+  }
+
+  .idea-header {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .idea-search {
+    width: min(200px, 100%) !important;
+  }
+
+  // chat toolbar fields
+  .chat-toolbar {
+    flex-wrap: wrap !important;
+  }
+
+  .chat-field {
+    width: min(200px, 100%) !important;
+  }
+
+  // keep secondary action links tappable
+  .arco-link {
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
+  }
+}

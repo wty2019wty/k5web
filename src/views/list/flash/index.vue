@@ -4,7 +4,7 @@
     <a-row :gutter="20" align="stretch">
       <a-col :span="24">
         <a-card class="general-card" :title="$t('menu.flash') + $t('global.onBoot')">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div class="flash-toolbar">
             <div>
               <a-space>
                 <a-button :disabled="state.isFlashing" @click="selectFile">{{ state.binaryFile ? state.binaryName : $t('tool.selectFirmware') }}</a-button>
@@ -262,6 +262,14 @@ export default {
 </script>
 
 <style scoped lang="less">
+.flash-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
 .container {
   padding: 0 20px 20px 20px;
 
