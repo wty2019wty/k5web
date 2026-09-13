@@ -117,7 +117,7 @@ export default {
   'tool.scanqr': '手机扫码获取经纬度',
   'tool.scannotice': '上传经纬度信息将被服务器缓存十分钟',
   'tool.scaned': '已扫码上传',
-  'global.nosupport': '当前浏览器不支持网页串口功能，请使用 Chrome, Edge, Opera 浏览器。',
+  'global.nosupport': '当前浏览器不支持网页串口/USB 功能，请使用 Chrome, Edge, Opera。安卓请用 Chrome 并接 OTG 写频线。',
   'global.connectFail': '连接失败',
   'global.handshakeFail': '握手失败',
   'menu.workshop': '创意工坊',

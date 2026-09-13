@@ -259,14 +259,11 @@
         if(appStore.connectPort)await disconnect(appStore.connectPort);
       }catch{}
       let _connect;
-      if (/Mobi|Android|iPhone/i.test(navigator.userAgent)) {
-        alert('手机写频开发中，无法正常使用，请使用电脑连接电台写频！！！In the development of mobile, it cannot be used normally. Please use a computer to connect!!!')
-      }else{
-        _connect = await connect();
-      }
+      // Web Serial (desktop) or WebUSB CH341 (Android Chrome) — connect() handles both
+      _connect = await connect();
 
       if(!_connect){
-        alert(t('global.connectFail'));  
+        alert(t('global.connectFail'));
         return;
       }
 
