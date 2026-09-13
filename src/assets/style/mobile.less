@@ -203,11 +203,26 @@
     margin-bottom: 12px;
   }
 
+  // Arco labels are right-aligned via flex justify-content, not text-align
   .arco-form-item-label-col {
     width: auto !important;
     flex: none !important;
     margin-bottom: 4px;
     text-align: left !important;
+    justify-content: flex-start !important;
+  }
+
+  .arco-form-item-label {
+    justify-content: flex-start !important;
+    text-align: left !important;
+  }
+
+  // TDesign form labels (drawer upload forms, etc.)
+  .t-form__label,
+  .t-form__label--right,
+  .t-form__label--left {
+    text-align: left !important;
+    justify-content: flex-start !important;
   }
 
   .arco-form-item-wrapper-col {
@@ -267,6 +282,21 @@
   .t-table__content,
   .arco-table-container {
     max-width: 100%;
+  }
+
+  // keep cell text left-aligned on narrow screens
+  .t-table td,
+  .t-table th,
+  .arco-table-td,
+  .arco-table-th,
+  .arco-table-td-align-right,
+  .arco-table-th-align-right {
+    text-align: left !important;
+  }
+
+  .t-pagination,
+  .arco-pagination {
+    justify-content: flex-start !important;
   }
 
   .t-table__content {
