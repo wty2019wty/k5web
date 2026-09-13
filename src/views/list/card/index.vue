@@ -21,7 +21,7 @@
                 <a-button type="primary" @click="backup">{{ $t('tool.backup') }}</a-button>
                 <a-input v-show="state.showHide >= 5" v-model="state.startInfo" />
                 <a-button @click="restore">{{ $t('tool.restore') }}</a-button>
-                <a-select v-model="state.eepromType" :style="{width:'320px'}" :placeholder="$t('tool.selectSize')">
+                <a-select v-model="state.eepromType" style="max-width: 320px; width: 100%;" :placeholder="$t('tool.selectSize')">
                   <a-option value="1">{{ $t('global.8kb') }}</a-option>
                   <a-option value="5">{{ $t('global.64kb') }}</a-option>
                   <a-option value="2">{{ $t('global.128kb') }}</a-option>

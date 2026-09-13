@@ -1,6 +1,6 @@
 <template>
   <div class="container">
-    <a-modal width="650px" v-model:visible="state.selfSatModal" @ok="addSelfSat">
+    <a-modal class="self-sat-modal" v-model:visible="state.selfSatModal" @ok="addSelfSat">
       <template #title>
         {{ $t("sat.selfSatInfo") }}
       </template>
@@ -31,7 +31,7 @@
             <a-form-item v-show="state.showHide >= 5" :label-col-style="{ width: '25%' }" field="dtCustom"
               label="自定义时间">
               <div>
-                <a-date-picker style="width: 220px; margin: 0 24px 24px 0;" show-time
+                <a-date-picker style="width: min(220px, 100%); margin: 0 0 12px 0;" show-time
                   :time-picker-props="{ defaultValue: '00:00:00' }" format="YYYY-MM-DD HH:mm:ss"
                   v-model="state.dtCustom" />
                 &nbsp;&nbsp;<t-button size="small" theme="success" @click="writeTime">写入时间到台站</t-button>
