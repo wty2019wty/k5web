@@ -1,10 +1,18 @@
 name: k5web-docker-ci
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag (default: latest)"
+        required: false
+        default: latest
 
 env:
   PLATFORMS: linux/amd64
-  TAG: latest
+  TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || 'latest' }}
 
 permissions:
   packages: write

@@ -1,6 +1,6 @@
 <template>
   <div class="container">
-    <a-modal class="self-sat-modal" v-model:visible="state.selfSatModal" @ok="addSelfSat">
+    <a-modal width="650px" class="self-sat-modal" v-model:visible="state.selfSatModal" @ok="addSelfSat">
       <template #title>
         {{ $t("sat.selfSatInfo") }}
       </template>

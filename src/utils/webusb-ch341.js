@@ -268,6 +268,15 @@ class WebUsbCh341Port {
             logWebUsb(`transferOut#${this._transferOutCount} ${fmtHex(slice)}`);
             offset += slice.length;
           }
+          // Full-size final bulk packet stays buffered on CH340 until a short/ZLP arrives.
+          if (data.length > 0 && data.length % this._epOutSize === 0) {
+            this._transferOutCount += 1;
+            const zlp = await this._device.transferOut(this._epOut, new Uint8Array(0));
+            if (zlp.status !== 'ok') {
+              logWebUsb(`transferOut#${this._transferOutCount} ZLP failed status=${zlp.status}`);
+              throw new Error(`USB bulk OUT ZLP failed: ${zlp.status}`);
+            }
+          }
         },
       });
     }

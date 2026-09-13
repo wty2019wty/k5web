@@ -262,8 +262,8 @@
       // Web Serial (desktop) or WebUSB CH341 (Android Chrome) — connect() handles both
       _connect = await connect();
 
+      // connect() alerts for WebUSB/unsupported failures; user cancel returns null silently.
       if(!_connect){
-        alert(t('global.connectFail'));
         return;
       }
 
