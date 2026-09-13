@@ -295,6 +295,19 @@
     text-align: left !important;
   }
 
+  // 排序列（拖拽手柄）保持居中；colKey=drag 的 th 类名是 t-table__th-drag
+  .t-table th.t-table__th-drag,
+  .t-table th.t-align-center,
+  .t-table td.t-table__handle-draggable,
+  .t-table td.t-align-center {
+    text-align: center !important;
+  }
+
+  .t-table th.t-table__th-drag .t-table__th-cell-inner {
+    text-align: center !important;
+    justify-content: center !important;
+  }
+
   .t-pagination,
   .arco-pagination {
     justify-content: flex-start !important;
@@ -308,6 +321,31 @@
 
   .t-table {
     min-width: 720px;
+  }
+
+  // 行拖拽手柄：阻断浏览器手势，避免与横向滚动冲突，并加大触控热区
+  .t-table td.t-table__handle-draggable {
+    touch-action: none !important;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: grab;
+    width: 48px !important;
+    min-width: 48px;
+    padding: 0 !important;
+    height: auto !important;
+
+    > span {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      min-height: 44px;
+      padding: 8px 10px;
+    }
+  }
+
+  .t-table__handle-draggable:active {
+    cursor: grabbing;
   }
 
   .ttable {
