@@ -74,6 +74,7 @@
   import { eeprom_write, eeprom_reboot, eeprom_init, eeprom_read, uint8ArrayToString, stringToUint8Array, check_eeprom, hexReverseStringToUint8Array, unpack } from '@/utils/serial.js';
   import { onMounted, reactive, nextTick } from 'vue';
 
+  const appStore = useAppStore();
   const { loading, setLoading } = useLoading(true);
 
   const state : any = reactive({

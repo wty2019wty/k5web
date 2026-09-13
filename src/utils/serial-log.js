@@ -1,6 +1,8 @@
 /**
  * 串口诊断日志：安卓上不方便开 devtools，把关键 USB / Serial 事件写进页面浮层，
- * 复现后截图/复制即可定位。控制台：window.__webusbDump() / __webusbClear() / __webusbVerbose(true)。
+ * 复现后截图/复制即可定位。控制台：window.__webusbDump() / __webusbClear() /
+ * __webusbVerbose(true) / __webusbOverlay(true|false)。
+ * 浮层默认仅在安卓注入；桌面生产环境只在内存收日志，避免常驻 UI。
  */
 
 const DEBUG_LOG = [];
@@ -17,6 +19,19 @@ let debugFlushScheduled = false;
 // 高频逐块日志（每 1–8B 一次）默认关闭：fmtHex 字符串拼接发生在主线程上，
 // 会挤占 USB 读循环、诱发丢字节。排查时调用 window.__webusbVerbose(true)。
 let debugVerbose = false;
+// 浮层是否允许注入 DOM。安卓默认开；桌面默认关，可用 ?webusb-debug=1 或控制台开启。
+function defaultOverlayEnabled() {
+    try {
+        if (typeof location !== 'undefined') {
+            const q = new URLSearchParams(location.search);
+            if (q.has('webusb-debug') && q.get('webusb-debug') !== '0' && q.get('webusb-debug') !== 'false') return true;
+            if (location.hash === '#webusb-debug') return true;
+        }
+        if (typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)) return true;
+    } catch {}
+    return false;
+}
+let debugOverlayEnabled = defaultOverlayEnabled();
 
 export function isDebugVerbose() {
     return debugVerbose;
@@ -26,12 +41,31 @@ export function setDebugVerbose(v) {
     debugVerbose = !!v;
 }
 
+export function setDebugOverlayEnabled(v) {
+    debugOverlayEnabled = !!v;
+    if (debugOverlayEnabled) {
+        try {
+            ensureDebugOverlay();
+        } catch {}
+    } else if (debugBodyEl) {
+        const box = document.getElementById('__webusb_debug');
+        if (box) box.remove();
+        debugBodyEl = null;
+        debugExpanded = false;
+        debugPending = [];
+    }
+}
+
+export function isDebugOverlayEnabled() {
+    return debugOverlayEnabled;
+}
+
 /** @param {'webserial'|'webusb'} mode */
 export function setDebugTransport(mode) {
     debugTransportLabel = mode === 'webserial' ? 'Web Serial' : 'WebUSB';
     try {
-        if (typeof document === 'undefined') return;
-        ensureDebugOverlay();
+        if (typeof document === 'undefined' || !debugOverlayEnabled) return;
+        // Only update an existing overlay; do not create one just to rename the title.
         const title = document.getElementById('__webusb_debug_title');
         if (title) title.textContent = `${debugTransportLabel} 日志`;
     } catch {}
@@ -143,7 +177,7 @@ export function logWebUsb(message) {
     DEBUG_LOG.push(line);
     if (DEBUG_LOG.length > DEBUG_LOG_MAX) DEBUG_LOG.splice(0, DEBUG_LOG.length - DEBUG_LOG_MAX);
     try {
-        if (typeof document !== 'undefined') {
+        if (typeof document !== 'undefined' && debugOverlayEnabled) {
             ensureDebugOverlay();
             if (debugExpanded) {
                 debugPending.push(line);
@@ -159,4 +193,5 @@ if (typeof window !== 'undefined') {
         if (debugBodyEl) debugBodyEl.textContent = ''; };
     window.__webusbLog = DEBUG_LOG;
     window.__webusbVerbose = setDebugVerbose;
+    window.__webusbOverlay = setDebugOverlayEnabled;
 }

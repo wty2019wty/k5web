@@ -892,7 +892,12 @@ async function connect() {
                 }
                 logWebUsb(`port.open 失败: ${error?.name || ''} ${error?.message || error}`);
                 console.error('Error connecting to the serial port:', error);
-                return null;
+                // Close so the interface is free for WebUSB on Android.
+                try { await port.close(); } catch {}
+                if (!isAndroid) {
+                    return null;
+                }
+                // Android: CH340 often appears in Web Serial but open fails — fall through to WebUSB.
             }
         }
     }
@@ -905,11 +910,15 @@ async function connect() {
         } catch (error) {
             logWebUsb(`WebUSB CH341 connect failed: ${error?.name || ''} ${error?.message || error}`);
             console.error('WebUSB CH341 connect failed:', error);
-            alert(String(error && error.message ? error.message : error));
+            // 用户取消选择设备（NotFoundError）时静默返回，与桌面 Web Serial 行为一致
+            if (error?.name !== 'NotFoundError') {
+                alert(String(error && error.message ? error.message : error));
+            }
             return null;
         }
     }
 
+    // Single alert owned here; navbar must not also alert when connect() returns null.
     alert('当前浏览器不支持网页串口/USB 串口功能，请使用 Chrome, Edge, Opera 浏览器。');
     return null;
 }
