@@ -96,8 +96,7 @@
             </a-form-item>
             <a-divider />
             <div id="statusArea"
-              style="height: 16em; min-height: 160px; background-color: var(--color-bg-3); color: var(--color-text-3); overflow: auto; padding: 12px; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px;"
-              v-html="safeStatus"></div>
+              style="height: 16em; min-height: 160px; background-color: var(--color-bg-3); color: var(--color-text-3); overflow: auto; padding: 12px; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px;">{{ state.status }}</div>
           </a-spin>
         </a-card>
       </a-col>
