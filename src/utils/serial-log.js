@@ -1,8 +1,8 @@
 /**
- * 串口诊断日志：安卓上不方便开 devtools，把关键 USB / Serial 事件写进页面浮层，
+ * 串口诊断日志：把关键 USB / Serial 事件写进页面浮层，
  * 复现后截图/复制即可定位。控制台：window.__webusbDump() / __webusbClear() /
  * __webusbVerbose(true) / __webusbOverlay(true|false)。
- * 浮层默认仅在安卓注入；桌面生产环境只在内存收日志，避免常驻 UI。
+ * 浮层默认开启（桌面 + 安卓）；可用 ?webusb-debug=0 或控制台 __webusbOverlay(false) 关闭。
  */
 
 const DEBUG_LOG = [];
@@ -19,17 +19,17 @@ let debugFlushScheduled = false;
 // 高频逐块日志（每 1–8B 一次）默认关闭：fmtHex 字符串拼接发生在主线程上，
 // 会挤占 USB 读循环、诱发丢字节。排查时调用 window.__webusbVerbose(true)。
 let debugVerbose = false;
-// 浮层是否允许注入 DOM。安卓默认开；桌面默认关，可用 ?webusb-debug=1 或控制台开启。
+// 浮层是否允许注入 DOM。默认开（桌面 + 安卓）；?webusb-debug=0 可关，控制台可再开关。
 function defaultOverlayEnabled() {
     try {
         if (typeof location !== 'undefined') {
             const q = new URLSearchParams(location.search);
-            if (q.has('webusb-debug') && q.get('webusb-debug') !== '0' && q.get('webusb-debug') !== 'false') return true;
-            if (location.hash === '#webusb-debug') return true;
+            const flag = q.get('webusb-debug');
+            if (flag === '0' || flag === 'false') return false;
+            if (q.has('webusb-debug') || location.hash === '#webusb-debug') return true;
         }
-        if (typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)) return true;
     } catch {}
-    return false;
+    return true;
 }
 let debugOverlayEnabled = defaultOverlayEnabled();
 
