@@ -1,0 +1,153 @@
+// Shared page-level UI primitives.
+// Base styles live here so pages stay thin; mobile.less only overrides at breakpoints.
+
+// ---------- workshop list header ----------
+.idea-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+  max-width: 100%;
+}
+
+.idea-search {
+  width: min(200px, 100%);
+}
+
+// ---------- status log panel ----------
+// Used by flash / sat / sat2 / bl / chi / card pages.
+.status-area {
+  height: 16em;
+  min-height: 160px;
+  padding: 12px;
+  overflow: auto;
+  background-color: var(--color-bg-3);
+  color: var(--color-text-3);
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  -webkit-overflow-scrolling: touch;
+}
+
+.status-area--spaced {
+  margin-top: 10px;
+}
+
+.status-area .sat-warn {
+  color: rgb(var(--orange-6));
+}
+
+// ---------- page toolbars ----------
+.flash-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.chat-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 10px;
+}
+
+.chat-field {
+  width: min(200px, 100%) !important;
+}
+
+// ---------- flexible field widths ----------
+.field-md {
+  width: min(220px, 100%);
+  max-width: 100%;
+  margin: 0 0 12px 0;
+}
+
+.field-lg {
+  width: min(360px, 100%);
+  max-width: 100%;
+  margin: 0 0 12px 0;
+}
+
+.field-select {
+  width: 100%;
+  max-width: 320px;
+}
+
+// ---------- fixed-width cards that must shrink ----------
+.rom-card {
+  width: 400px;
+  max-width: 100%;
+}
+
+.font-card {
+  width: 420px;
+  max-width: 100%;
+}
+
+.font-card-space {
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+// ---------- image cover (UV-K5 screen is 128x64, lock 2:1) ----------
+.cover-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  overflow: hidden;
+  background-color: #f2f3f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cover-star {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  display: block;
+  min-width: 80px;
+  padding-left: 10px;
+  padding-right: 10px;
+  background-color: rgba(0, 0, 0, 0.3);
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+.cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+// ---------- pixel matrix editor ----------
+.pixel-matrix-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-3);
+  padding: 4px;
+}
+
+.pixel-matrix {
+  touch-action: none;
+  user-select: none;
+}
+
+.threshold-slider {
+  width: min(200px, 100%);
+  vertical-align: middle;
+}
+
+// ---------- self satellite modal ----------
+.self-sat-modal {
+  max-width: calc(100vw - 24px);
+}

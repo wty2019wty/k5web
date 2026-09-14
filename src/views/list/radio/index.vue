@@ -41,19 +41,20 @@
           :loading="loading"
           size="medium"
           :columns="columns"
-          :data="cstate.renderData"
+          :data="pagedData"
+          disable-data-page
           :pagination="{
-            defaultPageSize: cstate.pageSize,
+            current: cstate.nowPage,
+            pageSize: cstate.pageSize,
             total: cstate.renderData.length,
-            defaultCurrent: 1,
             pageSizeOptions: [15, 30, 50, 100, 200]
           }"
           @change="(e: any)=>{cstate.pageSize = e.pagination.pageSize, cstate.nowPage = e.pagination.current}"
           bordered
-          lazy-load
-          :headerAffixedTop="{ offsetTop: 60 }"
+          :headerAffixedTop="appStore.device === 'mobile' ? false : { offsetTop: 60 }"
           :hover="true"
           drag-sort="row-handler"
+          :drag-sort-options="dragSortOptions"
           @drag-sort="onDragSort"
         >
           <template #drag="{ row, rowIndex }">
@@ -100,8 +101,24 @@
       showHide: 0
     })
   
+    const dragSortOptions = {
+      forceFallback: true,
+      supportPointer: false,
+      delay: 150,
+      delayOnTouchOnly: true,
+      touchStartThreshold: 5,
+    }
+
+    const pagedData = computed(() => {
+      const start = (cstate.nowPage - 1) * cstate.pageSize;
+      return cstate.renderData.slice(start, start + cstate.pageSize);
+    });
+
     const onDragSort = (params: any) => {
-      cstate.renderData = params.newData
+      const start = (cstate.nowPage - 1) * cstate.pageSize;
+      const newData = [...cstate.renderData];
+      newData.splice(start, cstate.pageSize, ...params.newData);
+      cstate.renderData = newData;
     }
   
     const columns = computed(() => [
@@ -109,6 +126,7 @@
         colKey: 'drag', // 列拖拽排序必要参数
         title: t('cps.sort'),
         width: 46,
+        align: 'center',
       },
       {
         title: '#',

@@ -28,7 +28,7 @@
             <a-progress :percent="state.progress / 100" :show-text="false" />
             <div style="margin-top: 6px; color: var(--color-text-3);">{{ state.phase }}</div>
           </div>
-          <div id="statusArea" style="height: 20em; background-color: var(--color-bg-3); color: var(--color-text-3); overflow: auto; padding: 20px"
+          <div id="statusArea" class="status-area"
             v-html="state.status"></div>
         </a-card>
       </a-col>
@@ -262,14 +262,6 @@ export default {
 </script>
 
 <style scoped lang="less">
-.flash-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
 .container {
   padding: 0 20px 20px 20px;
 

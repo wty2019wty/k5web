@@ -5,9 +5,7 @@
         {{ $t("sat.selfSatInfo") }}
       </template>
       <div>
-        <a-textarea v-model="state.selfSatInfo" style="height: 120px;" placeholder="ISS (ZARYA)             
-1 25544U 98067A   24320.36274227  .00015569  00000+0  28188-3 0  9999
-2 25544  51.6413 286.4173 0007936 217.3657 298.3197 15.49809951481990" />
+        <a-textarea v-model="state.selfSatInfo" style="height: 120px;" :placeholder="selfSatPlaceholder" />
       </div>
     </a-modal>
     <a-modal v-model:visible="state.visible" @ok="handleOk" :ok-text="$t('tool.scaned')">
@@ -31,7 +29,7 @@
             <a-form-item v-show="state.showHide >= 5" :label-col-style="{ width: '25%' }" field="dtCustom"
               label="自定义时间">
               <div>
-                <a-date-picker style="width: min(220px, 100%); margin: 0 0 12px 0;" show-time
+                <a-date-picker class="field-md" show-time
                   :time-picker-props="{ defaultValue: '00:00:00' }" format="YYYY-MM-DD HH:mm:ss"
                   v-model="state.dtCustom" />
                 &nbsp;&nbsp;<t-button size="small" theme="success" @click="writeTime">写入时间到台站</t-button>
@@ -71,7 +69,7 @@
             </a-form-item>
             <a-form-item v-show="state.showHide >= 5" :label-col-style="{ width: '25%' }" field="passCustom"
               label="自定义过境时间">
-              <a-range-picker style="width: min(360px, 100%); margin: 0 0 12px 0;" show-time
+              <a-range-picker class="field-lg" show-time
                 :time-picker-props="{ defaultValue: ['00:00:00', '00:00:00'] }" format="YYYY-MM-DD HH:mm:ss"
                 v-model="state.passCustom" />
             </a-form-item>
@@ -97,9 +95,7 @@
               <a-button type="primary" @click="writeIt">{{ $t('tool.writeData') }}</a-button>
             </a-form-item>
             <a-divider />
-            <div id="statusArea"
-              style="height: 16em; min-height: 160px; background-color: var(--color-bg-3); color: var(--color-text-3); overflow: auto; padding: 12px"
-              v-html="state.status"></div>
+            <div id="statusArea" class="status-area">{{ state.status }}</div>
           </a-spin>
         </a-card>
       </a-col>
@@ -113,9 +109,22 @@ import { useAppStore } from '@/store';
 import { eeprom_write, eeprom_reboot, eeprom_init, hexReverseStringToUint8Array, stringToUint8Array } from '@/utils/serial.js';
 import useLoading from '@/hooks/loading';
 import QRCode from 'qrcode';
-import { getPasses, getDopplerShifts } from '@/utils/satellite.js';
+import { getPasses, getDopplerShifts, parseGpJson, parseSelfSatInput, toSatrec } from '@/utils/satellite.js';
 
 const { loading, setLoading } = useLoading(true);
+
+const selfSatPlaceholder = `粘贴 TLE / OMM JSON，或星历文件 URL
+
+URL 例：
+https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=json
+
+TLE 例：
+ISS (ZARYA)
+1 25544U 98067A   24320.36274227  .00015569  00000+0  28188-3 0  9999
+2 25544  51.6413 286.4173 0007936 217.3657 298.3197 15.49809951481990
+
+OMM JSON 例：
+{"OBJECT_NAME":"ISS (ZARYA)","OBJECT_ID":"1998-067A","EPOCH":"2026-09-13T04:12:47.894976","MEAN_MOTION":15.49096932,"ECCENTRICITY":0.00049173,"INCLINATION":51.6307,"RA_OF_ASC_NODE":224.6171,"ARG_OF_PERICENTER":134.673,"MEAN_ANOMALY":225.4659,"EPHEMERIS_TYPE":0,"CLASSIFICATION_TYPE":"U","NORAD_CAT_ID":25544,"ELEMENT_SET_NO":999,"REV_AT_EPOCH":58539,"BSTAR":9.6694874e-5,"MEAN_MOTION_DOT":4.898e-5,"MEAN_MOTION_DDOT":0}`
 
 const appStore = useAppStore();
 
@@ -128,6 +137,7 @@ const state: {
   qrcode: string,
   showHide: number,
   status: string,
+  warnings: string[],
   sat: string,
   satData: any[],
   lng: number,
@@ -153,7 +163,8 @@ const state: {
   qrcode: '',
   visible: false,
   showHide: 0,
-  status: "点击写入按钮写入卫星数据到设备<br/><br/>",
+  status: "点击写入按钮写入卫星数据到设备\n\n",
+  warnings: [],
   sat: '',
   satData: [],
   lng: 0,
@@ -242,14 +253,23 @@ const syncTime = async () => {
 
 const changeSat = async (sat: any) => {
   const data = state.satData.find(e => e.name == sat);
-  if (data && data.path) {
-    state.status += '<br/>卫星参数：<br/>'
-    data.path.map((e: string) => {
-      state.status += e + '<br/>'
-    })
+  if (data && (data.omm || data.tle1)) {
+    state.status += '\n卫星参数：\n'
+    if (data.omm) {
+      state.status += `${data.omm.OBJECT_NAME} | NORAD ${data.omm.NORAD_CAT_ID}\n`
+      state.status += `历元 ${data.omm.EPOCH}\n`
+      state.status += `倾角 ${data.omm.INCLINATION}° | 偏心率 ${data.omm.ECCENTRICITY}\n`
+      state.status += `平均运动 ${data.omm.MEAN_MOTION} rev/day\n`
+    } else if (data.tle1) {
+      state.status += data.tle1 + '\n'
+      state.status += data.tle2 + '\n'
+    }
     let freqFlag = false
+    const noradId = data.omm
+      ? String(data.omm.NORAD_CAT_ID)
+      : (data.tle2?.split(' ')[1] || '').trim()
     state.freqDb.map((e: any) => {
-      if (data.path[1].split(" ")[1] == e.norad_id && e.mode.indexOf('FM') != -1) {
+      if (noradId && noradId == e.norad_id && e.mode.indexOf('FM') != -1) {
         console.log(e)
         freqFlag = true
         state.tx = e.uplink ? parseFloat(e.uplink.split('/')[0]) : 0
@@ -274,30 +294,22 @@ const changeSat = async (sat: any) => {
 
 const initSat = async () => {
   setLoading(true)
-  let rst = ''
-  if (sessionStorage.getItem('satRst')) {
-    rst = sessionStorage.getItem('satRst') || ""
-  } else {
-    rst = await (await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=amateur&FORMAT=tle')).text()
-    sessionStorage.setItem('satRst', rst)
-  }
-  const lines = rst.split(/\r?\n/);
-  const sat = [];
-  let _sat: any = {};
-  for (let i = 0; i < lines.length; i++) {
-    if (Number.isNaN(parseInt(lines[i].substring(0, 1)))) {
-      if (_sat.name && _sat.name != '') {
-        sat.push(_sat)
-        _sat = {}
-      }
-      _sat.name = lines[i]
+  try {
+    let rst = ''
+    // 旧键 satRst 是 TLE；FORMAT=json 的 OMM 数组可直接给 json2satrec
+    if (sessionStorage.getItem('satGpJson')) {
+      rst = sessionStorage.getItem('satGpJson') || ""
     } else {
-      if (!_sat.path) { _sat.path = [] }
-      _sat.path.push(lines[i])
+      rst = await (await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=amateur&FORMAT=json')).text()
+      sessionStorage.setItem('satGpJson', rst)
     }
+    state.satData = parseGpJson(rst).map((omm: any) => ({
+      name: omm.OBJECT_NAME,
+      omm,
+    }))
+  } finally {
+    setLoading(false)
   }
-  state.satData = sat
-  setLoading(false)
 }
 initSat()
 const getLocation = async () => {
@@ -348,13 +360,13 @@ const restoreRange = async (start: any = 0, uint8Array: any) => {
   await eeprom_init(appStore.connectPort);
   for (let i = start; i < uint8Array.length + start; i += 0x40) {
     await eeprom_write(appStore.connectPort, i, uint8Array.slice(i - start, i - start + 0x40), 0x40, appStore.configuration?.uart);
-    state.status = state.status + "写入进度：" + (((i - start) / uint8Array.length) * 100).toFixed(1) + "%<br/>";
+    state.status = state.status + "写入进度：" + (((i - start) / uint8Array.length) * 100).toFixed(1) + "%\n";
     nextTick(() => {
       const textarea = document?.getElementById('statusArea');
       if (textarea) textarea.scrollTop = textarea?.scrollHeight;
     })
   }
-  state.status = state.status + "写入进度：100.0%<br/>";
+  state.status = state.status + "写入进度：100.0%\n";
 }
 
 const getPass = async () => {
@@ -371,10 +383,13 @@ const getPass = async () => {
     hour12: false
   });
 
+  const satItem = state.satData.find(e => e.name == state.sat)
+  const satrec = toSatrec(satItem)
+  if (!satrec) { alert('卫星星历无效！'); setLoading(false); return; }
+
   const res = getPasses(
     {
-      tle1: state.satData.find(e => e.name == state.sat).path[0],
-      tle2: state.satData.find(e => e.name == state.sat).path[1],
+      satrec,
       latitude: state.lat,
       longitude: state.lng,
       heightKm: state.alt / 1000
@@ -408,10 +423,13 @@ const writeIt = async () => {
   if (!state.pass) { alert('请选择过境时间！'); return; };
   setLoading(true)
 
+  const satItem = state.satData.find(e => e.name == state.sat)
+  const satrec = toSatrec(satItem)
+  if (!satrec) { alert('卫星星历无效！'); setLoading(false); return; }
+
   const res = {
     shift_array: getDopplerShifts({
-      tle1: state.satData.find(e => e.name == state.sat).path[0],
-      tle2: state.satData.find(e => e.name == state.sat).path[1],
+      satrec,
       latitude: state.lat,
       longitude: state.lng,
       heightKm: state.alt / 1000,
@@ -505,23 +523,21 @@ const isValidURL = (url: string) => {
 }
 
 const addSelfSat = async () => {
-  if (isValidURL(state.selfSatInfo)) {
-    state.selfSatInfo = await (await fetch(state.selfSatInfo)).text()
-  }
-  const lines = (state.selfSatInfo + "\n").split(/\r?\n/);
-  const sat = [];
-  let _sat: any = {};
-  for (let i = 0; i < lines.length; i++) {
-    if (Number.isNaN(parseInt(lines[i].substring(0, 1)))) {
-      if (_sat.name && _sat.name != '') {
-        sat.push(_sat)
-        _sat = {}
-      }
-      _sat.name = lines[i]
-    } else {
-      if (!_sat.path) { _sat.path = [] }
-      _sat.path.push(lines[i])
+  const input = (state.selfSatInfo || '').trim()
+  if (!input) return
+  let text = input
+  if (isValidURL(input)) {
+    try {
+      text = await (await fetch(input)).text()
+    } catch {
+      alert('拉取 URL 失败（可能是跨域或网络问题），可手动打开链接后复制内容粘贴')
+      return
     }
+  }
+  const sat = parseSelfSatInput(text)
+  if (sat.length === 0) {
+    alert('未识别到卫星数据，请粘贴/URL 指向 TLE 或 OMM JSON')
+    return
   }
   state.satData = sat.concat(state.satData)
   state.selfSatInfo = ''
