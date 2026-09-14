@@ -41,7 +41,7 @@
             </t-card>
           </a-space>
           <a-divider />
-          <div id="statusArea" style="height: 20em; background-color: var(--color-bg-3); color: var(--color-text-3); overflow: auto; padding: 20px" v-html="state.status"></div>
+          <div id="statusArea" class="status-area" v-html="state.status"></div>
         </a-card>
       </a-col>
     </a-row>
@@ -184,16 +184,6 @@ const restore = async(type: any = 1) => {
 </script>
 
 <style scoped lang="less">
-  .font-card {
-    width: 420px;
-    max-width: 100%;
-  }
-
-  .font-card-space {
-    width: 100%;
-    flex-wrap: wrap;
-  }
-
   .container {
     padding: 0 20px 20px 20px;
     :deep(.arco-list-content) {

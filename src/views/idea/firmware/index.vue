@@ -49,7 +49,7 @@
             </a-card>
         </a-col>
       </a-row>
-      <t-drawer v-model:visible="state.showPanel" size="50%" header="我的固件" :footer="false">
+      <t-drawer v-model:visible="state.showPanel" size="90%" header="我的固件" :footer="false">
         <div style="display: flex; align-items: center; justify-content: space-between;">
           <t-button style="margin: 10px" @click="showUpload">上传新固件</t-button>
           <t-button :loading="state.refLoading" shape="circle" theme="outline" @click="refit">
@@ -75,7 +75,7 @@
           </t-list-item>
         </t-list>
       </t-drawer>
-      <t-drawer v-model:visible="state.showUpload" size="25%" header="上传新固件" :footer="false">
+      <t-drawer v-model:visible="state.showUpload" size="90%" header="上传新固件" :footer="false">
         <t-form
           :data="formData"
           reset-type="initial"
@@ -263,18 +263,6 @@ const searchIt = () => {
   </script>
   
   <style scoped lang="less">
-    .idea-header {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 1rem;
-      align-items: flex-end;
-      max-width: 100%;
-    }
-
-    .idea-search {
-      width: min(200px, 100%);
-    }
-
     .container {
       padding: 0 20px 20px 20px;
       :deep(.arco-list-content) {

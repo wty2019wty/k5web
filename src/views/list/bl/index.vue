@@ -63,7 +63,7 @@
           </t-card>
         </t-space>
       </a-card>
-        <div id="statusArea" style="height: 20em; background-color: var(--color-bg-3); color: var(--color-text-3); overflow: auto; padding: 20px; margin-top: 10px;"
+        <div id="statusArea" class="status-area status-area--spaced"
         v-html="state.status"></div>
     </div>
   </template>
@@ -328,11 +328,6 @@
   </script>
   
   <style scoped lang="less">
-    .rom-card {
-      width: 400px;
-      max-width: 100%;
-    }
-
     :deep(::-webkit-scrollbar-thumb){
       border-radius: 0 !important;
     }

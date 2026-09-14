@@ -292,19 +292,7 @@ const searchIt = () => {
   </script>
   
   <style scoped lang="less">
-    .idea-header {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem;
-    align-items: flex-end;
-    max-width: 100%;
-  }
-
-  .idea-search {
-    width: min(200px, 100%);
-  }
-
-  .container {
+    .container {
       padding: 0 20px 20px 20px;
       :deep(.arco-list-content) {
         overflow-x: hidden;

@@ -292,26 +292,6 @@ const changeThreshold = () => {
 </script>
 
 <style scoped lang="less">
-  .pixel-matrix-wrap {
-    width: 100%;
-    max-width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    border: 1px solid var(--color-border);
-    background: var(--color-bg-3);
-    padding: 4px;
-  }
-
-  .pixel-matrix {
-    touch-action: none;
-    user-select: none;
-  }
-
-  .threshold-slider {
-    width: min(200px, 100%);
-    vertical-align: middle;
-  }
-
   .container {
     padding: 0 20px 20px 20px;
     :deep(.arco-list-content) {

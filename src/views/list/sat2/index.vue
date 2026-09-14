@@ -29,7 +29,7 @@
             <a-form-item v-show="state.showHide >= 5" :label-col-style="{ width: '25%' }" field="dtCustom"
               label="自定义时间">
               <div>
-                <a-date-picker style="width: min(220px, 100%); margin: 0 0 12px 0;" show-time
+                <a-date-picker class="field-md" show-time
                   :time-picker-props="{ defaultValue: '00:00:00' }" format="YYYY-MM-DD HH:mm:ss"
                   v-model="state.dtCustom" />
                 &nbsp;&nbsp;<t-button size="small" theme="success" @click="writeTime">写入时间到台站</t-button>
@@ -53,8 +53,7 @@
               <a-button type="primary" @click="writeIt">{{ $t('tool.writeData') }}</a-button>
             </a-form-item>
             <a-divider />
-            <div id="statusArea"
-              style="height: 20em; background-color: var(--color-bg-3); color: var(--color-text-3); overflow: auto; padding: 20px; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px;">{{ state.status }}<div v-for="(w, i) in state.warnings" :key="i" class="sat-warn">{{ w }}</div></div>
+            <div id="statusArea" class="status-area">{{ state.status }}<div v-for="(w, i) in state.warnings" :key="i" class="sat-warn">{{ w }}</div></div>
           </a-spin>
         </a-card>
       </a-col>
@@ -688,10 +687,6 @@ export default {
 
 :deep(.arco-list-item) {
   width: 33%;
-}
-
-#statusArea .sat-warn {
-  color: rgb(var(--orange-6));
 }
 
 :deep(.block-title) {

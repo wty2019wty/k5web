@@ -196,18 +196,6 @@ export default {
 </script>
 
 <style scoped lang="less">
-.chat-toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    margin: 10px;
-}
-
-.chat-field {
-    width: min(200px, 100%) !important;
-}
-
 :deep(::-webkit-scrollbar-thumb) {
     border-radius: 0 !important;
 }

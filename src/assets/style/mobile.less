@@ -1,4 +1,5 @@
-// Mobile-first overrides for Android Chrome portrait (360–430px).
+// Mobile overrides for Android Chrome portrait (360–430px).
+// Base shared primitives live in ui.less; this file only ships breakpoint overrides.
 // Keep desktop intact; all rules live inside max-width media queries.
 
 @mobile-max: 768px;
@@ -366,33 +367,23 @@
     max-width: 100% !important;
   }
 
-  .pixel-matrix-wrap {
-    width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    border: 1px solid var(--color-border);
-    background: var(--color-bg-3);
-    padding: 4px;
-  }
-
-  .pixel-matrix {
-    touch-action: none;
-    user-select: none;
-  }
-
   #statusArea,
   .status-area {
-    padding: 12px !important;
-    font-size: 12px;
-    word-break: break-word;
     height: auto !important;
     min-height: 8em;
     max-height: 40vh;
   }
 
-  .flash-toolbar {
-    flex-wrap: wrap !important;
-    gap: 12px !important;
+  .self-sat-modal {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+  }
+
+  .field-md,
+  .field-lg,
+  .field-select {
+    width: 100% !important;
+    max-width: 100% !important;
   }
 
   .banner {
@@ -412,7 +403,8 @@
     flex-wrap: wrap;
   }
 
-  .t-slider {
+  .t-slider,
+  .threshold-slider {
     width: 100% !important;
     max-width: 240px;
   }
@@ -436,6 +428,10 @@
 
   .arco-link {
     word-break: break-all;
+    // keep secondary action links tappable
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
   }
 
   // workshop list: actions must wrap under title instead of overflowing
@@ -458,30 +454,5 @@
   .arco-card-extra {
     margin-right: 0 !important;
     width: 100%;
-  }
-
-  .idea-header {
-    flex-wrap: wrap;
-    row-gap: 8px;
-  }
-
-  .idea-search {
-    width: min(200px, 100%) !important;
-  }
-
-  // chat toolbar fields
-  .chat-toolbar {
-    flex-wrap: wrap !important;
-  }
-
-  .chat-field {
-    width: min(200px, 100%) !important;
-  }
-
-  // keep secondary action links tappable
-  .arco-link {
-    min-height: 32px;
-    display: inline-flex;
-    align-items: center;
   }
 }

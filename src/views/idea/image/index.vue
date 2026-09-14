@@ -64,7 +64,7 @@
             </a-card>
         </a-col>
       </a-row>
-      <t-drawer v-model:visible="state.showPanel" size="50%" header="我的图片" :footer="false" @dragenter="dragEnter" @dragleave="dragLeave" @dragover="dragOver" @drop="dropFile">
+      <t-drawer v-model:visible="state.showPanel" size="90%" header="我的图片" :footer="false" @dragenter="dragEnter" @dragleave="dragLeave" @dragover="dragOver" @drop="dropFile">
         <div style="display: flex; align-items: center; justify-content: space-between;">
           <t-button style="margin: 10px" @click="showUpload">上传新图片</t-button>
           <t-button :loading="state.refLoading" shape="circle" theme="outline" @click="refit">
@@ -90,7 +90,7 @@
           </t-list-item>
         </t-list>
       </t-drawer>
-      <t-drawer v-model:visible="state.showUpload" size="25%" header="上传新图片" :footer="false">
+      <t-drawer v-model:visible="state.showUpload" size="90%" header="上传新图片" :footer="false">
         <t-form
           :data="formData"
           reset-type="initial"
@@ -307,51 +307,6 @@ const searchIt = () => {
   </script>
   
   <style scoped lang="less">
-    .idea-header {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 1rem;
-      align-items: flex-end;
-      max-width: 100%;
-    }
-
-    /* UV-K5 屏幕为 128x64，封面按 2:1 锁定，避免不同图片被拉伸 */
-    .cover-wrap {
-      position: relative;
-      width: 100%;
-      aspect-ratio: 2 / 1;
-      overflow: hidden;
-      background-color: #f2f3f5;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .cover-star {
-      position: absolute;
-      top: 0;
-      left: 0;
-      z-index: 1;
-      display: block;
-      min-width: 80px;
-      padding-left: 10px;
-      padding-right: 10px;
-      background-color: rgba(0, 0, 0, 0.3);
-      color: #fff;
-      font-size: 0.9rem;
-    }
-
-    .cover-img {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      display: block;
-    }
-
-    .idea-search {
-      width: min(200px, 100%);
-    }
-
     .container {
       padding: 0 20px 20px 20px;
       :deep(.arco-list-content) {
