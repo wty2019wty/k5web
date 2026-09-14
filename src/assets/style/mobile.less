@@ -349,10 +349,18 @@
     cursor: grabbing;
   }
 
-  .ttable {
-    .t-table__affixed-header-elm-wrap {
-      height: auto !important;
-    }
+  // headerAffixedTop 会克隆一层吸顶表头，移动端与原表头叠在一起
+  // 即便 JS 已关闭，也兜底隐藏残余 affix 节点
+  .t-table__affixed-header-elm-wrap,
+  .t-table__affixed-header-elm,
+  .t-table > .t-affix,
+  .t-table .t-table__affixed-header-elm-wrap {
+    display: none !important;
+    height: 0 !important;
+    max-height: 0 !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
   }
 
   // ---------- page cards / images ----------

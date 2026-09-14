@@ -74,7 +74,7 @@
         }"
         @change="(e: any)=>{cstate.pageSize = e.pagination.pageSize, cstate.nowPage = e.pagination.current}"
         bordered
-        :headerAffixedTop="{ offsetTop: 60 }"
+        :headerAffixedTop="appStore.device === 'mobile' ? false : { offsetTop: 60 }"
         :hover="true"
         drag-sort="row-handler"
         :drag-sort-options="dragSortOptions"
