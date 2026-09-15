@@ -1,4 +1,4 @@
-import { hasWebUsbSupport, requestWebUsbCh341Port } from './webusb-ch341.js';
+import { hasWebUsbSupport, requestWebUsbSerialPort } from './webusb-serial/index.js';
 import { logWebUsb, fmtHex, setDebugTransport, isDebugVerbose } from './serial-log.js';
 
 const FONT_MAPPING_117 = {
@@ -855,15 +855,15 @@ function globalRelease(target = 'all'){
     } catch {}
 }
 
-// WebUSB CH340/CH341 直连路径（安卓 Chrome）。
+// WebUSB 多芯片串口直连路径（安卓 Chrome）。
 // 失败时返回 null；用户取消选择设备（NotFoundError）时静默，与桌面行为一致。
 async function connectWebUsb(baudRate) {
     try {
         setDebugTransport('webusb');
-        return await requestWebUsbCh341Port(baudRate);
+        return await requestWebUsbSerialPort(baudRate);
     } catch (error) {
-        logWebUsb(`WebUSB CH341 connect failed: ${error?.name || ''} ${error?.message || error}`);
-        console.error('WebUSB CH341 connect failed:', error);
+        logWebUsb(`WebUSB serial connect failed: ${error?.name || ''} ${error?.message || error}`);
+        console.error('WebUSB serial connect failed:', error);
         if (error?.name !== 'NotFoundError') {
             alert(String(error && error.message ? error.message : error));
         }
@@ -921,7 +921,7 @@ async function connect() {
         }
     }
 
-    // 2) 非安卓兜底：WebUSB CH340/CH341
+    // 2) 非安卓兜底：WebUSB（CH340/CP210x/PL2303/FTDI）
     if (hasWebUsbSupport()) {
         return await connectWebUsb(baudRate);
     }

@@ -12,28 +12,37 @@ K5Web 用于对兼容业余无线电台 UV-K5 写频、更新固件、写入星�
 | 平台 | 连接方式 | 状态 |
 |------|----------|------|
 | 桌面 Chrome / Edge / Opera | Web Serial API | 稳定，推荐 |
-| 安卓 Chrome（OTG + CH340 写频线） | WebUSB + CH341 驱动 | **实验性** |
+| 安卓 Chrome（OTG + USB 串口写频线） | WebUSB + 多芯片驱动 | **实验性** |
 | iOS / 其他浏览器 | — | 不支持 |
 
 ### 安卓 WebUSB（实验性）
 
-安卓上 **只要浏览器提供 WebUSB，就直接走 WebUSB，不再尝试原生 Web Serial**：Chrome 148+ 在安卓上也会暴露 `navigator.serial`，但它驱动不了 CH340 这类厂商自定义设备（列表里没有 CH340，或能 `open` 却收不到任何数据），而且弹出过的串口选择框会消耗用户手势，让随后的 `navigator.usb.requestDevice()` 抛 `SecurityError`。只有连 `navigator.usb` 都不存在时，才会退回 Web Serial（此时也没有别的选择）。因此安卓上默认通过 **WebUSB** 访问 CH340/CH341 写频线（实现见 `src/utils/webusb-ch341.js`，逻辑对齐 Linux `ch341.c`）。桌面的连接方式不变，仍然是 Web Serial。
+安卓上 **只要浏览器提供 WebUSB，就直接走 WebUSB，不再尝试原生 Web Serial**：Chrome 148+ 在安卓上也会暴露 `navigator.serial`，但它驱动不了 CH340 这类厂商自定义设备（列表里没有 CH340，或能 `open` 却收不到任何数据），而且弹出过的串口选择框会消耗用户手势，让随后的 `navigator.usb.requestDevice()` 抛 `SecurityError`。只有连 `navigator.usb` 都不存在时，才会退回 Web Serial（此时也没有别的选择）。因此安卓上默认通过 **WebUSB** 访问 USB 串口写频线（实现见 `src/utils/webusb-serial/`，逻辑对齐 Linux `ch341.c` / `cp210x.c` / `pl2303.c` / `ftdi_sio.c`）。桌面的连接方式不变，仍然是 Web Serial。
+
+**支持芯片（WebUSB）：**
+
+| 芯片 | 常见 VID:PID | 备注 |
+|------|----------------|------|
+| CH340 / CH341 | `1a86:7523` 等 | 最常见写频线 |
+| CP210x | `10c4:ea60` 等 | |
+| PL2303 | `067b:2303` | 山寨芯片兼容性不一 |
+| FTDI FT232R / FT231X | `0403:6001` / `0403:6015` | 仅单口；读包会剥 2 字节状态头 |
 
 **使用条件：**
 
 - 安卓 Chrome（建议 152 及以上；更旧的版本可能没有可用的 `navigator.usb`）
 - 站点需 HTTPS
-- 手机支持 USB Host，使用 OTG 线连接 CH340（`1a86:7523`）写频线
+- 手机支持 USB Host，使用 OTG 线连接上述芯片的写频线
 - 系统内核**不能**已占用该 USB 串口设备
 
 **已知限制：**
 
-- **实验性功能**：不同机型/ROM 差异大，可能出现 `claimInterface` 失败（内核 ch341 驱动已绑定）、偶发传输错误或握手超时
-- 仅针对沁恒 CH340/CH341 系列；CP210x / FTDI / PL2303 线材未实现
+- **实验性功能**：不同机型/ROM 差异大，可能出现 `claimInterface` 失败（内核驱动已绑定）、偶发传输错误或握手超时
+- FTDI 多口芯片（FT2232 / FT4232）未实现
 - 长时间刷固件请保持页面前台，避免安卓后台节流
 - 问题反馈请附：手机型号、安卓版本、Chrome 版本、写频线芯片、控制台日志
 
-诊断工具：仓库根目录 `android-webusb-ch341.html` 可单独用于验证手机能否通过 WebUSB 连接电台。
+诊断工具：仓库根目录 `android-webusb-ch341.html` 可单独用于验证手机能否通过 WebUSB 连接 CH340。
 
 ## 讨论
 - QQ 群：957225277  （K5Web相关）
