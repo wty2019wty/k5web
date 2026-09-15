@@ -1,4 +1,4 @@
-import { hasWebUsbSupport, requestWebUsbCh341Port } from './webusb-ch341.js';
+import { hasWebUsbSupport, requestWebUsbSerialPort } from './webusb-serial/index.js';
 import { logWebUsb, fmtHex, setDebugTransport, isDebugVerbose } from './serial-log.js';
 
 const FONT_MAPPING_117 = {
@@ -902,14 +902,14 @@ async function connect() {
         }
     }
 
-    // 2) WebUSB CH340/CH341 fallback (Android Chrome) — EXPERIMENTAL, see README
+    // 2) WebUSB fallback (Android Chrome) — CH340/CP210x/PL2303/FTDI, EXPERIMENTAL
     if (hasWebUsbSupport()) {
         try {
             setDebugTransport('webusb');
-            return await requestWebUsbCh341Port(baudRate);
+            return await requestWebUsbSerialPort(baudRate);
         } catch (error) {
-            logWebUsb(`WebUSB CH341 connect failed: ${error?.name || ''} ${error?.message || error}`);
-            console.error('WebUSB CH341 connect failed:', error);
+            logWebUsb(`WebUSB serial connect failed: ${error?.name || ''} ${error?.message || error}`);
+            console.error('WebUSB serial connect failed:', error);
             // 用户取消选择设备（NotFoundError）时静默返回，与桌面 Web Serial 行为一致
             if (error?.name !== 'NotFoundError') {
                 alert(String(error && error.message ? error.message : error));
