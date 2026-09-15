@@ -19,7 +19,7 @@
                     v-for="row, x in col"
                     :data-x="x"
                     :data-y="y"
-                    :style="'background-color: ' + row + '; height: 5px; width: 3.5px;'"
+                    :style="'background-color: ' + row + '; height: 3.5px; width: 3.5px;'"
                   ></td>
                 </tr>
               </table>
