@@ -185,5 +185,52 @@ ok('NORAD>=100000 只保留后 5 位', () => {
 ok('缺字段 ommToTle 返回 null', () => {
   assert.equal(ommToTle({ OBJECT_NAME: 'x', EPOCH: '2026-01-01T00:00:00' }), null);
 });
+ok('年份 2000 卫星历元正确（epoch year = 00）', () => {
+  // 2000 是闰年，6月15日 = 第 167 天
+  const omm = { ...ISS_OMM, EPOCH: '2000-06-15T12:00:00.000000' };
+  const [l1] = ommToTle(omm);
+  assert.match(l1, /00167\.50000000/);
+  checksumOk(l1);
+});
+ok('年份 2005 卫星历元正确（epoch year = 05）', () => {
+  const omm = { ...ISS_OMM, EPOCH: '2005-01-01T00:00:00.000000' };
+  const [l1] = ommToTle(omm);
+  assert.match(l1, /05001\.00000000/);
+  checksumOk(l1);
+});
+
+console.log('parseSelfSatInput 混合输入');
+ok('混合 JSON 数组：有效+无效只保留有效', () => {
+  const text = JSON.stringify([ISS_OMM, { OBJECT_NAME: 'bad', EPOCH: '2026-01-01T00:00:00' }]);
+  const items = parseSelfSatInput(text);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].name, 'ISS (ZARYA)');
+});
+ok('混合 TLE 文本：有效+残缺只保留有效', () => {
+  const text = [
+    'ISS (ZARYA)',
+    '1 25544U 98067A   24320.36274227  .00015569  00000+0  28188-3 0  9999',
+    '2 25544  51.6413 286.4173 0007936 217.3657 298.3197 15.49809951481990',
+    'BROKEN SAT',
+    '1 99999X',
+  ].join('\n');
+  const items = parseSelfSatInput(text);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].name, 'ISS (ZARYA)');
+});
+ok('多颗有效 TLE 全部保留', () => {
+  const text = [
+    'SAT-A',
+    '1 25544U 98067A   24320.36274227  .00015569  00000+0  28188-3 0  9999',
+    '2 25544  51.6413 286.4173 0007936 217.3657 298.3197 15.49809951481990',
+    'SAT-B',
+    '1 25545U 98067B   24320.36274227  .00015569  00000+0  28188-3 0  9999',
+    '2 25545  51.6413 286.4173 0007936 217.3657 298.3197 15.49809951481990',
+  ].join('\n');
+  const items = parseSelfSatInput(text);
+  assert.equal(items.length, 2);
+  assert.equal(items[0].name, 'SAT-A');
+  assert.equal(items[1].name, 'SAT-B');
+});
 
 console.log(`\n${passed} passed${process.exitCode ? ' (with failures)' : ''}`);
