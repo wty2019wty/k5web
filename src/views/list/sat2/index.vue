@@ -695,6 +695,10 @@ export default {
   width: 33%;
 }
 
+#statusArea .sat-warn {
+  color: rgb(var(--orange-6));
+}
+
 :deep(.block-title) {
   margin: 0 0 12px 0;
   font-size: 14px;
