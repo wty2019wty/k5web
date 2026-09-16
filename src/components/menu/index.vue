@@ -1,5 +1,5 @@
 <script lang="tsx">
-  import { defineComponent, ref, h, compile, computed } from 'vue';
+  import { defineComponent, ref, h, compile, computed, inject } from 'vue';
   import { useI18n } from 'vue-i18n';
   import { useRoute, useRouter, RouteRecordRaw } from 'vue-router';
   import type { RouteMeta } from 'vue-router';
@@ -16,6 +16,8 @@
       const router = useRouter();
       const route = useRoute();
       const { menuTree } = useMenuTree();
+      // 移动端抽屉菜单的关闭方法（由 default-layout 提供），必须在 setup 阶段注入
+      const closeDrawerMenu = inject<() => void>('closeDrawerMenu', undefined);
       const collapsed = computed({
         get() {
           if (appStore.device === 'desktop') return appStore.menuCollapse;
@@ -47,6 +49,8 @@
         router.push({
           name: item.name,
         });
+        // Mobile drawer stays open after push; close it for the next paint.
+        closeDrawerMenu?.();
       };
       const findMenuOpenKeys = (target: string) => {
         const result: string[] = [];

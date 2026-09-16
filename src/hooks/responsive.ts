@@ -3,30 +3,37 @@ import { useDebounceFn } from '@vueuse/core';
 import { useAppStore } from '@/store';
 import { addEventListen, removeEventListen } from '@/utils/event';
 
-const WIDTH = 992; // https://arco.design/vue/component/grid#responsivevalue
+// Keep aligned with @mobile-max in assets/style/mobile.less (WIDTH - 1).
+// https://arco.design/vue/component/grid#responsivevalue
+export const MOBILE_BREAKPOINT = 992;
 
-function queryDevice() {
+export function queryDevice() {
   const rect = document.body.getBoundingClientRect();
-  return rect.width - 1 < WIDTH;
+  return rect.width - 1 < MOBILE_BREAKPOINT;
+}
+
+export function applyDevice(appStore: ReturnType<typeof useAppStore>) {
+  const isMobile = queryDevice();
+  appStore.toggleDevice(isMobile ? 'mobile' : 'desktop');
 }
 
 export default function useResponsive(immediate?: boolean) {
   const appStore = useAppStore();
   function resizeHandler() {
-    if (!document.hidden) {
-      const isMobile = queryDevice();
-      appStore.toggleDevice(isMobile ? 'mobile' : 'desktop');
-      appStore.toggleMenu(isMobile);
-    }
+    applyDevice(appStore);
   }
   const debounceFn = useDebounceFn(resizeHandler, 100);
-  onMounted(() => {
-    if (immediate) debounceFn();
-  });
   onBeforeMount(() => {
+    // Sync on first paint so mobile never flashes the desktop shell.
+    applyDevice(appStore);
     addEventListen(window, 'resize', debounceFn);
+    addEventListen(document, 'visibilitychange', resizeHandler);
+  });
+  onMounted(() => {
+    if (immediate) resizeHandler();
   });
   onBeforeUnmount(() => {
     removeEventListen(window, 'resize', debounceFn);
+    removeEventListen(document, 'visibilitychange', resizeHandler);
   });
 }

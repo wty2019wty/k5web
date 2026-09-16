@@ -172,9 +172,6 @@ export default {
     justify-content: space-between;
 }
 
-:deep(.arco-list-item) {
-    width: 33%;
-}
 
 :deep(.block-title) {
     margin: 0 0 12px 0;

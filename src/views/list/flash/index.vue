@@ -7,7 +7,7 @@
           <div class="flash-toolbar">
             <div>
               <a-space>
-                <a-button :disabled="state.isFlashing" @click="selectFile">{{ state.binaryFile ? state.binaryName : $t('tool.selectFirmware') }}</a-button>
+                <a-button class="flash-file-btn" :disabled="state.isFlashing" @click="selectFile" :title="state.binaryName || undefined">{{ state.binaryFile ? state.binaryName : $t('tool.selectFirmware') }}</a-button>
                 <a-button type="primary" :disabled="!state.binaryFile || state.isFlashing" @click="flashIt">{{ $t('tool.flash') }}</a-button>
               </a-space>
             </div>
@@ -281,9 +281,6 @@ export default {
   justify-content: space-between;
 }
 
-:deep(.arco-list-item) {
-  width: 33%;
-}
 
 :deep(.block-title) {
   margin: 0 0 12px 0;
