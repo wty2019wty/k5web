@@ -3,7 +3,7 @@
     <Breadcrumb :items="[$t('menu.list'), $t('menu.image')]" />
     <a-row :gutter="20" align="stretch">
       <a-col :span="24">
-        <a-spin :loading="state.loading" tip="写入中..." style="width: 100%;">
+        <a-spin :loading="state.loading" :tip="$t('image.writing')" style="width: 100%;">
           <a-card class="general-card" :title="$t('menu.image') + $t('global.onStart')">
             <div id="canvasDiv" style="zoom: 250%; display: none"></div>
             <div
@@ -19,8 +19,8 @@
                 @contextmenu.prevent
               ></div>
               <div class="pixel-fs-bar" v-if="state.isFs">
-                <span class="pixel-fs-title">128 × 64 · 左落笔 · 右移笔</span>
-                <t-button size="small" theme="default" variant="outline" @click.stop="exitFullscreen">退出全屏</t-button>
+                <span class="pixel-fs-title">{{ $t('image.fsBar') }}</span>
+                <t-button size="small" theme="default" variant="outline" @click.stop="exitFullscreen">{{ $t('image.fsExit') }}</t-button>
               </div>
               <div
                 class="pixel-matrix-wrap"
@@ -32,7 +32,7 @@
                   v-if="!state.isFs && showFsHint"
                   @click.stop="enterFullscreen"
                 >
-                  点击进入横屏全屏编辑
+                  {{ $t('image.fsHint') }}
                 </button>
                 <div class="pixel-matrix-holder">
                   <div
@@ -63,10 +63,10 @@
                 </div>
                 <div v-if="state.isFs" class="pixel-fs-zones" aria-hidden="true">
                   <div class="pixel-fs-zone pixel-fs-zone--draw" :class="{ 'is-active': state.penDown }">
-                    <span>落笔</span>
+                    <span>{{ $t('image.fsZoneDraw') }}</span>
                   </div>
                   <div class="pixel-fs-zone pixel-fs-zone--move" :class="{ 'is-active': state.penActive }">
-                    <span>移笔</span>
+                    <span>{{ $t('image.fsZoneMove') }}</span>
                   </div>
                 </div>
               </div>
@@ -79,11 +79,11 @@
                 variant="outline"
                 @click.stop="enterFullscreen"
               >
-                横屏全屏编辑
+                {{ $t('image.fsEnter') }}
               </t-button>
             </div>
             <br>
-            色彩阈值：<t-slider v-model="state.threshold" :max="256" class="threshold-slider" @change-end="changeThreshold" />
+            {{ $t('image.threshold') }}<t-slider v-model="state.threshold" :max="256" class="threshold-slider" @change-end="changeThreshold" />
             <br>
             <a-space>
               <a-button @click="selectFile">{{ $t('tool.selectImage') }}</a-button>
