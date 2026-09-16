@@ -185,11 +185,26 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  appearance: none;
   background: rgba(0, 0, 0, 0.45);
   color: #fff;
+  font: inherit;
   font-size: 14px;
-  pointer-events: none;
+  cursor: pointer;
+  // must receive clicks so entry actually works
+  pointer-events: auto;
   user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pixel-fs-hint:hover,
+.pixel-fs-hint:active {
+  background: rgba(0, 0, 0, 0.55);
 }
 
 .pixel-matrix-holder {

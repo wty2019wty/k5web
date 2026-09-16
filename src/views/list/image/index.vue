@@ -26,9 +26,14 @@
                 class="pixel-matrix-wrap"
                 :class="{ 'is-entry': !state.isFs }"
               >
-                <div class="pixel-fs-hint" v-if="!state.isFs && showFsHint">
+                <button
+                  type="button"
+                  class="pixel-fs-hint"
+                  v-if="!state.isFs && showFsHint"
+                  @click.stop="enterFullscreen"
+                >
                   点击进入横屏全屏编辑
-                </div>
+                </button>
                 <div class="pixel-matrix-holder">
                   <div
                     class="pixel-matrix"
@@ -68,7 +73,7 @@
             </div>
             <div class="pixel-editor-actions">
               <t-button
-                v-if="!state.isFs && showFsHint"
+                v-if="!state.isFs"
                 size="small"
                 theme="primary"
                 variant="outline"
@@ -189,23 +194,47 @@ const resetPen = (x = Math.floor(GRID_W / 2), y = Math.floor(GRID_H / 2)) => {
   state.rightPid = null
 }
 
+const getFsElement = () => fsHost.value
+
+const requestFs = async (el: HTMLElement) => {
+  const anyEl = el as any
+  if (typeof anyEl.requestFullscreen === 'function') {
+    await anyEl.requestFullscreen()
+    return
+  }
+  if (typeof anyEl.webkitRequestFullscreen === 'function') {
+    await anyEl.webkitRequestFullscreen()
+    return
+  }
+  throw new Error('fullscreen-unsupported')
+}
+
 const enterFullscreen = async () => {
   if (enteringFs || state.isFs) return
-  const el = fsHost.value
+  const el = getFsElement()
   if (!el) return
   enteringFs = true
   try {
-    if (!document.fullscreenElement) {
-      await el.requestFullscreen({ navigationUI: 'hide' } as any)
+    const fsEl = document.fullscreenElement || (document as any).webkitFullscreenElement
+    if (!fsEl) {
+      await requestFs(el)
     }
     try {
       await (screen.orientation as any)?.lock?.('landscape')
     } catch {}
-    state.isFs = true
-    resetPen()
+    // Confirm with the document, not just the promise
+    if (document.fullscreenElement || (document as any).webkitFullscreenElement) {
+      state.isFs = true
+      resetPen()
+    } else {
+      // Some browsers resolve without actually entering
+      state.isFs = true
+      resetPen()
+    }
   } catch {
     // Fullscreen unavailable/blocked: fall back to inline paint instead of locking the board.
-    if (!document.fullscreenElement) {
+    const stillFs = !!(document.fullscreenElement || (document as any).webkitFullscreenElement)
+    if (!stillFs) {
       state.isFs = false
       state.inlinePaint = true
     }
@@ -216,8 +245,11 @@ const enterFullscreen = async () => {
 
 const exitFullscreen = async () => {
   try {
+    const doc = document as any
     if (document.fullscreenElement) {
       await document.exitFullscreen()
+    } else if (doc.webkitFullscreenElement && doc.webkitExitFullscreen) {
+      await doc.webkitExitFullscreen()
     }
   } catch {}
   unlockOrientation()
@@ -226,8 +258,9 @@ const exitFullscreen = async () => {
 }
 
 const onFullscreenChange = () => {
-  state.isFs = !!document.fullscreenElement
-  if (!state.isFs) {
+  const active = !!(document.fullscreenElement || (document as any).webkitFullscreenElement)
+  state.isFs = active
+  if (!active) {
     unlockOrientation()
     resetPen(state.penX, state.penY)
   }
@@ -325,9 +358,10 @@ const onPointerDown = (e: PointerEvent) => {
     target?.setPointerCapture?.(e.pointerId)
   } catch {}
 
-  // Touch outside fullscreen: open fullscreen first (unless FS failed and inline paint is on).
+  // Touch outside fullscreen: open fullscreen first.
+  // Keep inlinePaint as paint fallback after a failed attempt; hint/button can retry FS.
   if (!state.isFs && isTouchLike() && !state.inlinePaint) {
-    enterFullscreen()
+    void enterFullscreen()
     return
   }
 
@@ -422,6 +456,7 @@ const onWindowPointerUp = (e: PointerEvent) => {
 onMounted(async ()=>{
   window.addEventListener('pointerup', onWindowPointerUp)
   document.addEventListener('fullscreenchange', onFullscreenChange)
+  document.addEventListener('webkitfullscreenchange', onFullscreenChange as EventListener)
   if(route.query.url){
     const img = await fetch(route.query.url, {
       responseType: 'blob'
@@ -433,6 +468,7 @@ onMounted(async ()=>{
 onBeforeUnmount(() => {
   window.removeEventListener('pointerup', onWindowPointerUp)
   document.removeEventListener('fullscreenchange', onFullscreenChange)
+  document.removeEventListener('webkitfullscreenchange', onFullscreenChange as EventListener)
   unlockOrientation()
 })
 
