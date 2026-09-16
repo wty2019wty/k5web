@@ -228,16 +228,9 @@
     min-width: auto !important;
   }
 
-  // pixel editor cells enlarge on touch devices via CSS variable
-  .pixel-matrix {
-    --px-size: 10px;
-
-    td {
-      width: var(--px-size) !important;
-      height: var(--px-size) !important;
-      min-width: var(--px-size);
-      min-height: var(--px-size);
-    }
+  // pixel editor: full 128×64 board always fits the card (handled in ui.less)
+  .pixel-matrix-wrap {
+    padding: 2px;
   }
 
   // BL EEPROM map
