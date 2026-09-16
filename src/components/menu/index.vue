@@ -16,6 +16,8 @@
       const router = useRouter();
       const route = useRoute();
       const { menuTree } = useMenuTree();
+      // 移动端抽屉菜单的关闭方法（由 default-layout 提供），必须在 setup 阶段注入
+      const closeDrawerMenu = inject<() => void>('closeDrawerMenu', undefined);
       const collapsed = computed({
         get() {
           if (appStore.device === 'desktop') return appStore.menuCollapse;
@@ -48,7 +50,6 @@
           name: item.name,
         });
         // Mobile drawer stays open after push; close it for the next paint.
-        const closeDrawerMenu = inject<() => void>('closeDrawerMenu', undefined);
         closeDrawerMenu?.();
       };
       const findMenuOpenKeys = (target: string) => {
