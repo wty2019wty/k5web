@@ -14,7 +14,7 @@
                 <a-button @click="connectIt" type="primary">{{ state.startChat }}</a-button>
                 <!-- await eeprom_init(appStore.connectPort); -->
             </div>
-            <div class="chat-log" style="height: 500px; border: 1px solid #eee;">
+            <div class="chat-log">
                 <a-list :max-height="'100%'" :bordered="false" ref="msgList">
                     <template #empty></template>
                     <a-list-item v-for="item of state.msgList">
@@ -210,6 +210,16 @@ export default {
 
 .container {
     padding: 0 20px 20px 20px;
+}
+
+.chat-log {
+    height: 500px;
+    border: 1px solid #eee;
+    overflow: hidden;
+}
+
+:deep(.arco-list-wrapper) {
+    height: 100%;
 }
 
 :deep(.arco-table-th) {
