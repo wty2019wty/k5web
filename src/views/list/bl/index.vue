@@ -34,14 +34,15 @@
             <t-button size="small" variant="outline" @click="clearAll(256)">{{ $t('bl.clear') }}</t-button>
           </div>
         </div>
-        <div style="width: 100%; overflow: scroll; user-select: none;">
+        <div class="bl-eprom-map" style="width: 100%; overflow: auto; user-select: none;">
           <div style="height: 328px; display: flex; flex-direction: column; margin: 0; padding: 0; flex-wrap: wrap">
             <div
-              @click="clearEp2(index)"
+              class="bl-eprom-cell"
+              @click="onCellClick(item, index)"
               :ondragover="(event: any)=>{showAdd(index);event.preventDefault()}"
               :ondrop="()=>{targetOver(item, index)}"
               :title="
-                item == -2 ? $t('bl.bootloader') : (item != -1 ? state.rom[item].binaryName : 
+                item == -2 ? $t('bl.bootloader') : (item != -1 ? state.rom[item].binaryName :
                 (index * 64 + 0x40000).toString(16).toUpperCase() + ' - ' + (index * 64 + 0x40000 + 63).toString(16).toUpperCase()
               )"
               :style="item == -1 ? 'background-color: white; border: 1px solid #ddd; height: 10px;' : (
@@ -52,14 +53,14 @@
             </div>
           </div>
         </div>
-        <a-button style="margin-bottom: 10px;" @click="selectFile">{{ state.binaryFile ? state.binaryName : $t('tool.selectFirmware') }}</a-button>（{{ $t('bl.drag') }}）
+        <a-button style="margin-bottom: 10px;" @click="selectFile">{{ state.binaryFile ? state.binaryName : $t('tool.selectFirmware') }}</a-button>（{{ $t('bl.drag') }} 或点选固件后再点日历格放置）
         <br>
-        <t-space break-line>
-          <t-card class="rom-card" draggable="true" :ondragstart="()=>{state.nowDrag = index}" v-for="(item, index) in state.rom" :title="item.binaryName" :bordered="true" hover-shadow>
+        <t-space break-line class="bl-rom-actions">
+          <t-card class="rom-card" :class="{ 'is-armed': state.nowDrag === index && state.armed }" draggable="true" :ondragstart="()=>{state.nowDrag = index}" v-for="(item, index) in state.rom" :title="item.binaryName" :bordered="true" hover-shadow @click="armRom(index)">
             <template #actions>
               <div :style="'width: 10px; height: 10px; background-color: ' + item.color + ';'"></div>
             </template>
-            <t-input v-model="item.binaryName" @change="changeName(index)" show-limit-number :maxlength="13" />
+            <t-input v-model="item.binaryName" @change="changeName(index)" show-limit-number :maxlength="13" @click.stop />
           </t-card>
         </t-space>
       </a-card>
@@ -83,6 +84,7 @@
     bl: undefined,
     blName: '',
     nowDrag: -1,
+    armed: false,
     showAdd: '',
     status: ''
   })
@@ -259,8 +261,27 @@
     for(let i = slot; i < slot + Math.ceil(state.rom[state.nowDrag].binaryFile.length / 0x40); i += 1){
       state.calendar[i] = state.nowDrag
     }
-    console.log((slot * 64 + 0x40000).toString(16))
-    console.log((Math.ceil(state.rom[state.nowDrag].binaryFile.length / 0x40) * 0x40 + (slot * 64 + 0x40000) - 1).toString(16))
+  }
+
+  // Touch-friendly placement: tap a ROM card to arm it, then tap a calendar cell.
+  const armRom = (index: number) => {
+    if (state.armed && state.nowDrag === index) {
+      state.armed = false
+      state.nowDrag = -1
+    } else {
+      state.nowDrag = index
+      state.armed = true
+    }
+  }
+
+  const onCellClick = (item: number, index: number) => {
+    if (state.armed && state.nowDrag >= 0 && state.rom[state.nowDrag]) {
+      targetOver(item, index)
+      state.armed = false
+      state.nowDrag = -1
+      return
+    }
+    clearEp2(index)
   }
 
   const getColor = () => {
@@ -340,37 +361,12 @@
     .container {
       padding: 0 20px 20px 20px;
     }
-    :deep(.arco-table-th) {
-      &:last-child {
-        .arco-table-th-item-title {
-          margin-left: 16px;
-        }
-      }
-    }
-    .action-icon {
-      margin-left: 12px;
+    .rom-card.is-armed {
+      outline: 2px solid rgb(var(--arcoblue-6));
       cursor: pointer;
     }
-    .active {
-      color: #0960bd;
-      background-color: #e3f4fc;
-    }
-    .setting {
-      display: flex;
-      align-items: center;
-      width: 200px;
-      .title {
-        margin-left: 12px;
-        cursor: pointer;
-      }
-    }
-    .ttable {
-      :deep(.t-table__affixed-header-elm-wrap){
-        height: 60px !important;
-      }
-      :deep(.t-table__content){
-        scrollbar-width: auto !important;
-      }
+    .rom-card {
+      cursor: pointer;
     }
   </style>
   

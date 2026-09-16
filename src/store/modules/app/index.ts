@@ -45,6 +45,7 @@ const useAppStore = defineStore('app', {
     },
     toggleDevice(device: string) {
       this.device = device;
+      this.hideMenu = device === 'mobile';
     },
     toggleMenu(value: boolean) {
       this.hideMenu = value;

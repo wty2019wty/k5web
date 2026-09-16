@@ -29,12 +29,12 @@
     <div>
       <a-collapse :default-active-key="state.activeKey" accordion @change="changeMainActive">
         <a-collapse-item header="腾讯公益" :key="2">
-          <img loading="lazy" class="tencent" style="margin-bottom: 10px;" width="200px" src="/gy.png" />
+          <img loading="lazy" class="tencent banner-img" style="margin-bottom: 10px;" src="/gy.png" />
         </a-collapse-item>
         <a-collapse-item header="饿饿饭饭" :key="3">
-          <img loading="lazy" width="300" src="/mm_facetoface_collect_qrcode_1714392837792.png" >
-          <img loading="lazy" width="263" src="/1722745910257.jpg" >
-          <img loading="lazy" width="272.1" src="/20250815183238_4.jpg" >
+          <img loading="lazy" class="banner-img" src="/mm_facetoface_collect_qrcode_1714392837792.png" >
+          <img loading="lazy" class="banner-img" src="/1722745910257.jpg" >
+          <img loading="lazy" class="banner-img" src="/20250815183238_4.jpg" >
           <br><br>
           TRON / TRX：TPaSnHJ2cRCQjjv7TyAFJDamb3mZSSz1At
         </a-collapse-item>
@@ -42,7 +42,7 @@
     </div>
     <br>
     <a href="https://apps.microsoft.com/detail/9pb0w69f5dp6?referrer=appbadge&mode=direct" target="_blank">
-      <img :src="`https://get.microsoft.com/images/${getLang()}%20dark.svg`" width="200"/>
+      <img class="banner-img" :src="`https://get.microsoft.com/images/${getLang()}%20dark.svg`" />
     </a>
     <!-- <div class="halloween">
       <div class="head">
@@ -120,6 +120,11 @@
     padding: 20px 20px 0 20px;
     background-color: var(--color-bg-2);
     border-radius: 4px 4px 0 0;
+  }
+
+  .banner-img {
+    max-width: 100%;
+    height: auto;
   }
 
   :deep(.arco-icon-home) {

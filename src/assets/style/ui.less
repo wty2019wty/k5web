@@ -140,6 +140,12 @@
 .pixel-matrix {
   touch-action: none;
   user-select: none;
+  --px-size: 3.5px;
+
+  td {
+    width: var(--px-size);
+    height: var(--px-size);
+  }
 }
 
 .threshold-slider {
@@ -150,4 +156,26 @@
 // ---------- self satellite modal ----------
 .self-sat-modal {
   max-width: calc(100vw - 24px);
+}
+
+// ---------- markdown / DIY readme HTML ----------
+.readme {
+  pre,
+  code {
+    max-width: 100%;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  img {
+    max-width: 100%;
+    height: auto;
+  }
 }

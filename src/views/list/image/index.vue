@@ -19,7 +19,7 @@
                     v-for="row, x in col"
                     :data-x="x"
                     :data-y="y"
-                    :style="'background-color: ' + row + '; height: 3.5px; width: 3.5px;'"
+                    :style="'background-color: ' + row + ';'"
                   ></td>
                 </tr>
               </table>
@@ -309,9 +309,6 @@ const changeThreshold = () => {
     justify-content: space-between;
   }
 
-  :deep(.arco-list-item) {
-    width: 33%;
-  }
 
   :deep(.block-title) {
     margin: 0 0 12px 0;

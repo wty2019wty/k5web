@@ -77,6 +77,8 @@
           height: 48px;
           white-space: nowrap;
           overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+          touch-action: pan-x;
 
           :deep(.arco-tag) {
             display: inline-flex;
@@ -96,6 +98,14 @@
     .tag-bar-operation {
       width: 100px;
       height: 32px;
+    }
+  }
+
+  @media screen and (max-width: 991px) {
+    .tab-bar-container {
+      .tag-bar-operation {
+        display: none;
+      }
     }
   }
 </style>

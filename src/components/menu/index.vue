@@ -1,5 +1,5 @@
 <script lang="tsx">
-  import { defineComponent, ref, h, compile, computed } from 'vue';
+  import { defineComponent, ref, h, compile, computed, inject } from 'vue';
   import { useI18n } from 'vue-i18n';
   import { useRoute, useRouter, RouteRecordRaw } from 'vue-router';
   import type { RouteMeta } from 'vue-router';
@@ -47,6 +47,9 @@
         router.push({
           name: item.name,
         });
+        // Mobile drawer stays open after push; close it for the next paint.
+        const closeDrawerMenu = inject<() => void>('closeDrawerMenu', undefined);
+        closeDrawerMenu?.();
       };
       const findMenuOpenKeys = (target: string) => {
         const result: string[] = [];

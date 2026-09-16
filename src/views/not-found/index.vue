@@ -19,12 +19,12 @@
 
 <style scoped lang="less">
   .content {
-    // padding-top: 100px;
     position: absolute;
     top: 50%;
     left: 50%;
-    margin-left: -95px;
-    margin-top: -121px;
+    transform: translate(-50%, -50%);
+    width: min(90vw, 400px);
     text-align: center;
+    padding-top: env(safe-area-inset-top, 0);
   }
 </style>

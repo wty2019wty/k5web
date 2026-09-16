@@ -2,7 +2,8 @@
 // Base shared primitives live in ui.less; this file only ships breakpoint overrides.
 // Keep desktop intact; all rules live inside max-width media queries.
 
-@mobile-max: 768px;
+// Must stay aligned with hooks/responsive.ts WIDTH (992) — CSS is max-width so use WIDTH-1.
+@mobile-max: 991px;
 
 // ---------- shared helpers ----------
 .mobile-wrap {
@@ -115,16 +116,16 @@
 
       .nav-btn {
         font-size: 14px;
-        min-width: 32px;
-        height: 32px;
-        padding: 0 8px;
+        min-width: 40px;
+        height: 40px;
+        padding: 0 10px;
       }
 
       a.arco-btn,
       .arco-btn {
-        height: 32px;
-        min-height: 32px;
-        padding: 0 10px;
+        height: 40px;
+        min-height: 40px;
+        padding: 0 12px;
         font-size: 13px;
         white-space: nowrap;
         max-width: 46vw;
@@ -142,6 +143,7 @@
 
   .layout-sider {
     width: 260px !important;
+    padding-left: env(safe-area-inset-left, 0);
   }
 
   .arco-drawer {
@@ -151,6 +153,125 @@
       padding: 12px;
     }
   }
+
+  // DIY / markdown HTML (losehu readme etc.)
+  .readme {
+    pre,
+    code {
+      max-width: 100%;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    table {
+      display: block;
+      max-width: 100%;
+      overflow-x: auto;
+    }
+
+    img {
+      max-width: 100%;
+      height: auto;
+    }
+  }
+
+  // chat message list
+  .chat-log {
+    height: min(500px, 55vh) !important;
+  }
+
+  .chat-msg-row {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+
+    .chat-msg-from {
+      flex-shrink: 0;
+      width: 88px;
+      text-align: right;
+      margin-right: 8px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .chat-msg-body {
+      flex: 1 1 auto;
+      min-width: 0;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  // idea drawer "my list" rows
+  .idea-my-list-row {
+    flex-wrap: wrap !important;
+
+    > .idea-my-list-main {
+      width: 100% !important;
+      max-width: 100% !important;
+      margin-bottom: 8px;
+    }
+
+    > .idea-my-list-side {
+      width: 100% !important;
+      max-width: 100% !important;
+      text-align: left !important;
+      margin: 0 !important;
+    }
+  }
+
+  // tables: allow narrow pages to avoid a forced empty 720px strip
+  .t-table--narrow,
+  .t-table.t-table--narrow {
+    min-width: auto !important;
+  }
+
+  // pixel editor cells enlarge on touch devices via CSS variable
+  .pixel-matrix {
+    --px-size: 10px;
+
+    td {
+      width: var(--px-size) !important;
+      height: var(--px-size) !important;
+      min-width: var(--px-size);
+      min-height: var(--px-size);
+    }
+  }
+
+  // BL EEPROM map
+  .bl-eprom-map {
+    overflow: auto !important;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x pan-y;
+  }
+
+  .bl-eprom-cell {
+    min-height: 20px !important;
+    height: 20px !important;
+    min-width: 12px;
+  }
+
+  .bl-rom-actions {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  // guide steps
+  .guide-steps-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+
+  // global setting drawer entrance
+  .fixed-settings {
+    right: 12px !important;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0)) !important;
+    top: auto !important;
+  }
+
 
   // ---------- layout grid / toolbars ----------
   .arco-row {
@@ -421,11 +542,6 @@
     padding-top: 12px;
   }
 
-  .fixed-settings {
-    right: 12px !important;
-    bottom: calc(12px + env(safe-area-inset-bottom, 0)) !important;
-  }
-
   // long link text in cards should wrap, not push buttons off-screen
   .arco-typography,
   .arco-typography-text,
@@ -462,5 +578,22 @@
   .arco-card-extra {
     margin-right: 0 !important;
     width: 100%;
+  }
+
+  .flash-file-btn {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .midMessage {
+    left: 50% !important;
+    transform: translateX(-50%);
+    max-width: calc(100vw - 24px);
+  }
+
+  .arco-tabs-nav {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 }

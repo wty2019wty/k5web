@@ -14,14 +14,14 @@
                 <a-button @click="connectIt" type="primary">{{ state.startChat }}</a-button>
                 <!-- await eeprom_init(appStore.connectPort); -->
             </div>
-            <div style="height: 500px; border: 1px solid #eee;">
-                <a-list :max-height="500" :bordered="false" ref="msgList">
+            <div class="chat-log" style="height: 500px; border: 1px solid #eee;">
+                <a-list :max-height="'100%'" :bordered="false" ref="msgList">
                     <template #empty></template>
                     <a-list-item v-for="item of state.msgList">
-                        <div style="display: flex;">
-                            <div style="width: 100px; text-align: right; margin-right: 10px;">{{ item.callsign }}({{
-                                item.devid.toString().padStart(2, "0") }})</div> >
-                            <div style="margin-left: 10px;">{{ item.content }}</div>
+                        <div class="chat-msg-row">
+                            <div class="chat-msg-from">{{ item.callsign }}({{
+                                item.devid.toString().padStart(2, "0") }})</div>
+                            <div class="chat-msg-body">{{ item.content }}</div>
                         </div>
                     </a-list-item>
                 </a-list>
@@ -217,37 +217,6 @@ export default {
         .arco-table-th-item-title {
             margin-left: 16px;
         }
-    }
-}
-
-.action-icon {
-    margin-left: 12px;
-    cursor: pointer;
-}
-
-.active {
-    color: #0960bd;
-    background-color: #e3f4fc;
-}
-
-.setting {
-    display: flex;
-    align-items: center;
-    width: 200px;
-
-    .title {
-        margin-left: 12px;
-        cursor: pointer;
-    }
-}
-
-.ttable {
-    :deep(.t-table__affixed-header-elm-wrap) {
-        height: 60px !important;
-    }
-
-    :deep(.t-table__content) {
-        scrollbar-width: auto !important;
     }
 }
 </style>

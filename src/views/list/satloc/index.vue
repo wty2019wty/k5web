@@ -83,10 +83,8 @@ export default {
 <style scoped lang="less">
 .container {
     background-color: rgb(242, 243, 245);
-    width: 100vw;
-    height: 100vh;
-    padding-top: 10%;
-    padding-left: 10%;
-    padding-right: 10%;
+    width: 100%;
+    min-height: 100vh;
+    padding: 10%;
 }
 </style>

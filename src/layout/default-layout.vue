@@ -111,6 +111,7 @@
           v-if="hideMenu"
           :visible="drawerVisible"
           placement="left"
+          :width="280"
           :footer="false"
           mask-closable
           :closable="false"
@@ -224,7 +225,11 @@
       renderMenu.value && !hideMenu.value
         ? { paddingLeft: `${menuWidth.value}px` }
         : {};
-    const paddingTop = navbar.value ? { paddingTop: navbarHeight } : {};
+    const paddingTop = navbar.value
+      ? {
+          paddingTop: `calc(${navbarHeight} + env(safe-area-inset-top, 0))`,
+        }
+      : {};
     return { ...paddingLeft, ...paddingTop };
   });
   const setCollapsed = (val: boolean) => {
@@ -245,6 +250,15 @@
   provide('toggleDrawerMenu', () => {
     drawerVisible.value = !drawerVisible.value;
   });
+  provide('closeDrawerMenu', () => {
+    drawerVisible.value = false;
+  });
+  watch(
+    () => route.fullPath,
+    () => {
+      drawerVisible.value = false;
+    }
+  );
   onMounted(() => {
     isInit.value = true;
   });
@@ -265,7 +279,8 @@
     left: 0;
     z-index: 100;
     width: 100%;
-    height: @nav-size-height;
+    height: calc(@nav-size-height + env(safe-area-inset-top, 0));
+    padding-top: env(safe-area-inset-top, 0);
   }
 
   .layout-sider {

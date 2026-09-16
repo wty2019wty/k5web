@@ -689,9 +689,6 @@ export default {
   justify-content: space-between;
 }
 
-:deep(.arco-list-item) {
-  width: 33%;
-}
 
 #statusArea .sat-warn {
   color: rgb(var(--orange-6));
