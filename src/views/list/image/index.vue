@@ -209,36 +209,32 @@ const requestFs = async (el: HTMLElement) => {
   throw new Error('fullscreen-unsupported')
 }
 
+const isDocumentFullscreen = () =>
+  !!(document.fullscreenElement || (document as any).webkitFullscreenElement)
+
 const enterFullscreen = async () => {
   if (enteringFs || state.isFs) return
   const el = getFsElement()
   if (!el) return
   enteringFs = true
   try {
-    const fsEl = document.fullscreenElement || (document as any).webkitFullscreenElement
-    if (!fsEl) {
+    if (!isDocumentFullscreen()) {
       await requestFs(el)
     }
     try {
       await (screen.orientation as any)?.lock?.('landscape')
     } catch {}
-    // Confirm with the document, not just the promise
-    if (document.fullscreenElement || (document as any).webkitFullscreenElement) {
+  } catch {
+    // request failed; fall through to document check
+  } finally {
+    // Only enter FS UI after the document actually reports a fullscreen element
+    if (isDocumentFullscreen()) {
       state.isFs = true
       resetPen()
     } else {
-      // Some browsers resolve without actually entering
-      state.isFs = true
-      resetPen()
-    }
-  } catch {
-    // Fullscreen unavailable/blocked: fall back to inline paint instead of locking the board.
-    const stillFs = !!(document.fullscreenElement || (document as any).webkitFullscreenElement)
-    if (!stillFs) {
       state.isFs = false
       state.inlinePaint = true
     }
-  } finally {
     enteringFs = false
   }
 }
@@ -258,7 +254,7 @@ const exitFullscreen = async () => {
 }
 
 const onFullscreenChange = () => {
-  const active = !!(document.fullscreenElement || (document as any).webkitFullscreenElement)
+  const active = isDocumentFullscreen()
   state.isFs = active
   if (!active) {
     unlockOrientation()
@@ -267,7 +263,8 @@ const onFullscreenChange = () => {
 }
 
 const cellSize = () => {
-  const board = document.querySelector('.pixel-matrix') as HTMLElement | null
+  const host = fsHost.value
+  const board = host?.querySelector('.pixel-matrix') as HTMLElement | null
   if (!board) return null
   const rect = board.getBoundingClientRect()
   const cellW = rect.width / GRID_W
@@ -469,7 +466,11 @@ onBeforeUnmount(() => {
   window.removeEventListener('pointerup', onWindowPointerUp)
   document.removeEventListener('fullscreenchange', onFullscreenChange)
   document.removeEventListener('webkitfullscreenchange', onFullscreenChange as EventListener)
-  unlockOrientation()
+  if (isDocumentFullscreen()) {
+    void exitFullscreen()
+  } else {
+    unlockOrientation()
+  }
 })
 
 const negativeIt = () => {
