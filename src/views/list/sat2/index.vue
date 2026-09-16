@@ -45,10 +45,10 @@
                   }}</a-link>
               </div>
             </a-form-item>
-            <a-form-item :label-col-style="{ width: '25%' }" field="sat" label="">
+            <div class="sat2-table-wrap">
               <t-table ref="tableRef" row-key="key" :columns="columns" :data="state.satsData"
               :editable-cell-state="editableCellState" bordered lazy-load />
-            </a-form-item>
+            </div>
             <a-form-item :label-col-style="{ width: '25%' }" label="">
               <a-button type="primary" @click="writeIt">{{ $t('tool.writeData') }}</a-button>
             </a-form-item>
@@ -221,7 +221,6 @@ const columns = computed(() => [
       component: Input,
       props: {
         clearable: true,
-        autofocus: true,
       },
       // 触发校验的时机（when to validate)
       validateTrigger: 'change',
@@ -283,7 +282,6 @@ const columns = computed(() => [
       component: Input,
       props: {
         clearable: true,
-        autofocus: true,
       },
       // 触发校验的时机（when to validate)
       validateTrigger: 'change',
@@ -697,6 +695,13 @@ export default {
 
 #statusArea .sat-warn {
   color: rgb(var(--orange-6));
+}
+
+.sat2-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 :deep(.block-title) {
