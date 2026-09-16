@@ -7,7 +7,7 @@
     </a-button>
   </div>
   <a-drawer
-    :width="300"
+    :width="'min(300px, 90vw)'"
     unmount-on-close
     :visible="visible"
     :cancel-text="$t('settings.close')"

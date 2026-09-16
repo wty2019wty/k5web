@@ -4,13 +4,15 @@
     <a-row :gutter="20" align="stretch">
       <a-col :span="24">
         <a-card class="general-card" title="使用117P6版">
-          <a-steps :current="state.step">
-            <a-step>选择固件类型</a-step>
-            <a-step>使用自定义固件</a-step>
-            <a-step>完成</a-step>
-          </a-steps>
+          <div class="guide-steps-wrap">
+            <a-steps :current="state.step">
+              <a-step>选择固件类型</a-step>
+              <a-step>使用自定义固件</a-step>
+              <a-step>完成</a-step>
+            </a-steps>
+          </div>
           <a-divider/>
-          <div v-show="state.step == 1" style="min-height: 300px; margin: 50px;">
+          <div v-show="state.step == 1" style="min-height: 300px; margin: 12px 0;">
             <p style="font-size: 1.2em; font-weight: bold;">你是否想要扩容你的设备以支持中文信道存储：</p>
             <a-radio-group type="button" v-model="state.kIt">
               <a-radio value="yes">是的，我想要硬件改造我的设备</a-radio>
@@ -316,9 +318,6 @@ const flashFont = async () => {
     justify-content: space-between;
   }
 
-  :deep(.arco-list-item) {
-    width: 33%;
-  }
 
   :deep(.block-title) {
     margin: 0 0 12px 0;
