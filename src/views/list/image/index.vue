@@ -11,9 +11,16 @@
               class="pixel-editor-host"
               :class="{ 'is-fs': state.isFs }"
             >
+              <div v-if="state.isFs" class="pixel-fs-input"
+                @pointerdown="onPointerDown"
+                @pointermove="onPointerMove"
+                @pointerup="onPointerUp"
+                @pointercancel="onPointerCancel"
+                @contextmenu.prevent
+              ></div>
               <div class="pixel-fs-bar" v-if="state.isFs">
                 <span class="pixel-fs-title">128 × 64 · 左落笔 · 右移笔</span>
-                <t-button size="small" theme="default" variant="outline" @click="exitFullscreen">退出全屏</t-button>
+                <t-button size="small" theme="default" variant="outline" @click.stop="exitFullscreen">退出全屏</t-button>
               </div>
               <div
                 class="pixel-matrix-wrap"
