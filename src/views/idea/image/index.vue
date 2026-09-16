@@ -73,8 +73,8 @@
         </div>
         <t-list :split="true">
           <t-list-item v-for="item in state.myList">
-            <div style="display: flex; width: 100%;">
-              <div style="width: 90%;">
+            <div class="idea-my-list-row" style="display: flex; width: 100%;">
+              <div class="idea-my-list-main" style="flex: 1 1 auto; min-width: 0;">
                 <t-tag theme="primary" variant="outline" v-if="item.status == 0">审核中{{ item.remark && `（${item.remark}）` }}</t-tag>
                 <t-tag theme="primary" variant="outline" v-else-if="item.status == 1">已审核{{ item.remark && `（${item.remark}）` }}</t-tag>
                 <t-tag theme="primary" variant="outline" v-else="item.status == 2">已驳回{{ item.remark && `（${item.remark}）` }}</t-tag>
@@ -82,7 +82,7 @@
                 <br>
                 {{ item.desc }}
               </div>
-              <div style="width: 40%; margin: auto; text-align: center;">
+              <div class="idea-my-list-side" style="flex-shrink: 0; margin: auto 0 auto 12px; text-align: center;">
                 <t-tag>{{ item.create_time_text }}</t-tag>&nbsp;
                 <t-link theme="primary" hover="color" @click="onDT(item.id)">删除</t-link>
               </div>
@@ -324,9 +324,6 @@ const searchIt = () => {
       justify-content: space-between;
     }
   
-    :deep(.arco-list-item) {
-      width: 33%;
-    }
   
     :deep(.block-title) {
       margin: 0 0 12px 0;

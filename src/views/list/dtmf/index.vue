@@ -24,7 +24,7 @@
           </a-col>
         </a-row>
         <t-table
-          class="ttable"
+          class="ttable t-table--narrow"
           :loading="loading"
           size="medium"
           :columns="columns"
@@ -119,12 +119,12 @@
         title: '#',
         colKey: 'index',
         align: 'left',
-        width: 100
+        width: 56
       },
       {
         title: t('cps.contact'),
         colKey: 'name',
-        width: 250,
+        width: 160,
         align: 'left',
         cell: (h, { row }) => row.name,
         edit: {
@@ -143,7 +143,7 @@
         title: t('cps.dtmfid'),
         colKey: 'dtmfid',
         align: 'left',
-        width: 200,
+        width: 120,
         cell: (h, { row }) => row.dtmfid,
         edit: {
           component: Input,
@@ -162,7 +162,7 @@
         title: t('cps.operate'),
         colKey: 'operate',
         align: 'left',
-        width: 150
+        width: 96
       }
     ]);
   
@@ -286,21 +286,14 @@
       color: #0960bd;
       background-color: #e3f4fc;
     }
-    .setting {
-      display: flex;
-      align-items: center;
-      width: 200px;
-      .title {
-        margin-left: 12px;
-        cursor: pointer;
-      }
-    }
-    .ttable {
-      :deep(.t-table__affixed-header-elm-wrap){
-        height: 60px !important;
-      }
-      :deep(.t-table__content){
-        scrollbar-width: auto !important;
+    @media screen and (min-width: 992px) {
+      .ttable {
+        :deep(.t-table__affixed-header-elm-wrap){
+          height: 60px !important;
+        }
+        :deep(.t-table__content){
+          scrollbar-width: auto !important;
+        }
       }
     }
   </style>

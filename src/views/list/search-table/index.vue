@@ -1050,27 +1050,21 @@
     color: #0960bd;
     background-color: #e3f4fc;
   }
-  .setting {
-    display: flex;
-    align-items: center;
-    width: 200px;
-    .title {
-      margin-left: 12px;
-      cursor: pointer;
-    }
-  }
-  .ttable {
-    :deep(.t-table__affixed-header-elm-wrap){
-      height: 60px !important;
-    }
-    :deep(.t-table__content){
-      scrollbar-width: auto !important;
+  @media screen and (min-width: 992px) {
+    .ttable {
+      :deep(.t-table__affixed-header-elm-wrap){
+        height: 60px !important;
+      }
+      :deep(.t-table__content){
+        scrollbar-width: auto !important;
+      }
     }
   }
   .midMessage {
-    position: absolute;
-    top: 200px;
+    position: fixed;
+    top: 20%;
     z-index: 99;
     left: 50%;
+    transform: translateX(-50%);
   }
 </style>
