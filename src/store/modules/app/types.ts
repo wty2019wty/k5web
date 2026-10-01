@@ -23,7 +23,7 @@ export interface AppState {
   firmwareVersion?: string;
   configuration?: unknown;
 
-  // BLE 写分片档位：'auto' 或 512/256/128/64/32/20
+  // BLE 写分片档位：'auto' 或 509/256/128/64/32/20
   bleChunkSize?: string | number;
 
   [key: string]: unknown;
