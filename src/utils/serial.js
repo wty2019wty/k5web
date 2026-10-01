@@ -1524,10 +1524,17 @@ async function sendPacket(port, data) {
         // WebUSB(安卓 CH340) 路径：整帧一次写出。桌面 Web Serial 依赖操作系统
         // 串口缓冲做流控，可安全地按 64B 分片；WebUSB 直接下发 USB 包，分片间隔
         // 过短会让 CH340 的 UART FIFO 丢字节，导致电台收不到完整命令而“卡住”。
-        const isWebUsb = port && typeof port.chip === 'string';
-        const chunkSize = isWebUsb ? packet.length : 64;
+        //
+        // 注意：BLE 端口的 chip 也是字符串（'BLE-NUS'），所以不能再只用
+        // “chip 是字符串”来判定 WebUSB。整帧单次写出对 BLE 同样适用（真正的
+        // 分片交给 ble-serial 内部处理），但下面那段 sleep(8) 是给 CH340 重新
+        // 挂起 transferIn 用的——BLE 收数据走 GATT 通知队列，完全不需要，
+        // 白等会拖慢每一个事务（几十上百个事务累加就是几百 ms~数秒）。
+        const isSingleWriteFrame = port && typeof port.chip === 'string';
+        const needsWebUsbRearm = isSingleWriteFrame && port.transport !== 'ble';
+        const chunkSize = isSingleWriteFrame ? packet.length : 64;
         const chunkedPacket = chunkUint8Array(packet, Math.max(1, chunkSize));
-        if (isWebUsb) {
+        if (isSingleWriteFrame) {
             logWebUsb(`写出 sendPacket 帧长=${packet.length} 单次写出`);
         } else {
             logWebUsb(`写出 sendPacket 帧长=${packet.length} chunks=${chunkedPacket.length} ${fmtHex(packet, 16)}`);
@@ -1535,14 +1542,15 @@ async function sendPacket(port, data) {
         for(let i = 0; i < chunkedPacket.length; i++){
             await writer.write(chunkedPacket[i]);
             // WebUSB 整帧已单次写出，无需再分片间隔；桌面 Web Serial 按 64B 分片时保留短延迟。
-            if (!isWebUsb) await sleep(1);
+            if (!isSingleWriteFrame) await sleep(1);
         }
-        if (!isWebUsb) logWebUsb('写出 完成');
+        if (!isSingleWriteFrame) logWebUsb('写出 完成');
 
         // Give the WebUSB read loop a tick to re-arm transferIn before the
         // radio starts answering — otherwise the first bytes (ab cd) can
         // sit in the CH340 FIFO and the rest of the frame never lands cleanly.
-        if (isWebUsb) await sleep(8);
+        // 仅真正的 WebUSB 需要；BLE 走通知缓冲，无需这段等待。
+        if (needsWebUsbRearm) await sleep(8);
 
         // close writer
         writer.releaseLock();
