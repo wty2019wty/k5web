@@ -15,19 +15,89 @@
  *   - chip      : 供 serial.js 判定“整帧单次写出”
  */
 
-import { logWebUsb, fmtHex, isDebugVerbose } from '../serial-log.js';
+import { logWebUsb, fmtHex, isDebugVerbose, addDebugControl } from '../serial-log.js';
 
 /* NUS UUID（与固件 ble_uart 组件一致） */
 export const BLE_NUS_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 export const BLE_NUS_WRITE = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // 网页 -> 设备（写）
 export const BLE_NUS_NOTIFY = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // 设备 -> 网页（通知）
 
-// BLE 写分片大小。实际可用负载 = 协商 MTU - 3：
+// BLE 写分片档位（字节）。实际可用负载 = 协商 MTU - 3：
 //   - 默认 MTU 23 -> 20 字节（兼容性下限）
-//   - 桥接器请求 MTU 512（ESP32C3_NUS_BLE/sdkconfig.defaults），可安全用大包提速（刷机尤其明显）
-// 想提速可把 DEFAULT_CHUNK 调到 100；写失败会自动减半重试，最低退到 MIN_CHUNK，无需担心兼容性。
-const DEFAULT_CHUNK = 20;
-const MIN_CHUNK = 20; // 最小 ATT MTU(23) 的有效负载，兼容性下限
+//   - 桥接器请求 MTU 512（ESP32C3_NUS_BLE/sdkconfig.defaults），大包可显著提速（刷机尤其明显）
+// 档位：512 / 256 / 128 / 64 / 32 / 20；或 "auto"：从 512 逐级降级并记住本次可用值。
+export const BLE_CHUNK_OPTIONS = [512, 256, 128, 64, 32, 20];
+export const BLE_CHUNK_AUTO = 'auto';
+const CHUNK_STORAGE_KEY = 'k5web.bleChunkSize';
+// 本次会话内“自动”模式已确认可用的最大分片：重连时直接用它，省去再次降级。
+let autoChunkHint = null;
+
+/** 读取用户选择的 BLE 写分片档位（localStorage 持久化；默认 auto）。 */
+export function getBleChunkSetting() {
+    try {
+        const value = localStorage.getItem(CHUNK_STORAGE_KEY);
+        if (value === BLE_CHUNK_AUTO) return BLE_CHUNK_AUTO;
+        const num = Number(value);
+        if (BLE_CHUNK_OPTIONS.includes(num)) return num;
+    } catch {}
+    return BLE_CHUNK_AUTO;
+}
+
+/** 保存 BLE 写分片档位到 localStorage。 */
+export function setBleChunkSetting(value) {
+    try {
+        if (value === BLE_CHUNK_AUTO) {
+            localStorage.setItem(CHUNK_STORAGE_KEY, BLE_CHUNK_AUTO);
+        } else if (BLE_CHUNK_OPTIONS.includes(Number(value))) {
+            localStorage.setItem(CHUNK_STORAGE_KEY, String(Number(value)));
+        }
+    } catch {}
+}
+
+/** 生成降级阶梯：auto 从 512 起；固定档从所选值起，仍允许向下（不高于所选值）。 */
+function buildChunkLadder(setting) {
+    if (setting === BLE_CHUNK_AUTO) {
+        const start =
+            autoChunkHint && BLE_CHUNK_OPTIONS.includes(autoChunkHint)
+                ? autoChunkHint
+                : BLE_CHUNK_OPTIONS[0];
+        return BLE_CHUNK_OPTIONS.filter((v) => v <= start);
+    }
+    const fixed = BLE_CHUNK_OPTIONS.includes(setting) ? setting : BLE_CHUNK_OPTIONS[0];
+    return [fixed, ...BLE_CHUNK_OPTIONS.filter((v) => v < fixed)];
+}
+
+// 把「写分片」选择器挂到串口日志浮层的工具栏，连接前即可快速切换（下次连接生效）。
+// 仅在 BLE 传输模式下显示，Web Serial / WebUSB 时隐藏。
+addDebugControl(() => {
+    if (typeof document === 'undefined') return null;
+    const wrap = document.createElement('label');
+    wrap.style.cssText = 'display:flex;align-items:center;gap:2px;color:#fff';
+    wrap.append('分片');
+    const select = document.createElement('select');
+    select.style.cssText = 'font:11px monospace;padding:0 2px';
+    for (const value of BLE_CHUNK_OPTIONS) {
+        const opt = document.createElement('option');
+        opt.value = String(value);
+        opt.textContent = String(value);
+        select.appendChild(opt);
+    }
+    const autoOpt = document.createElement('option');
+    autoOpt.value = BLE_CHUNK_AUTO;
+    autoOpt.textContent = '自动';
+    select.appendChild(autoOpt);
+    select.value = String(getBleChunkSetting());
+    select.onchange = () => {
+        const raw = select.value;
+        const value = raw === BLE_CHUNK_AUTO ? BLE_CHUNK_AUTO : Number(raw);
+        setBleChunkSetting(value);
+        logWebUsb(
+            `BLE 写分片已设为 ${value === BLE_CHUNK_AUTO ? '自动' : `${value}B`}（下次连接生效）`
+        );
+    };
+    wrap.appendChild(select);
+    return wrap;
+}, (mode) => mode === 'ble');
 // 单次连接内最多打印多少条原始收发日志（避免拖慢主线程、掩盖丢字节）
 const MAX_VERBOSE_LOGS = 60;
 
@@ -57,13 +127,17 @@ export class BleSerialPort {
      * @param {BluetoothDevice} device
      * @param {BluetoothRemoteGATTCharacteristic} writeChar  网页 -> 设备
      * @param {BluetoothRemoteGATTCharacteristic} notifyChar 设备 -> 网页
-     * @param {{ chunkSize?: number, chip?: string }} [options]
+     * @param {{ chunkSize?: number | 'auto', chip?: string }} [options]
      */
     constructor(device, writeChar, notifyChar, options = {}) {
         this._device = device;
         this._writeChar = writeChar;
         this._notifyChar = notifyChar;
-        this._chunkSize = options.chunkSize || DEFAULT_CHUNK;
+        const chunkSetting = options.chunkSize || getBleChunkSetting();
+        this._autoMode = chunkSetting === BLE_CHUNK_AUTO;
+        this._chunkLadder = buildChunkLadder(chunkSetting);
+        this._chunkIndex = 0;
+        this._chunkSize = this._chunkLadder[0];
         // chip 为字符串会让 serial.js 走“整帧单次写出”路径；
         // 实际的分片交给本模块的 writable 处理。
         this.chip = options.chip || 'BLE-NUS';
@@ -164,16 +238,21 @@ export class BleSerialPort {
                         }
                         try {
                             await this._writeChunk(slice);
+                            // “自动”模式记住已确认可用的整档分片，重连时直接复用。
+                            if (this._autoMode && size === this._chunkSize) {
+                                autoChunkHint = this._chunkSize;
+                            }
                             offset += size;
                         } catch (error) {
                             // 实际可用负载 = 协商 MTU - 3。大 MTU 时大包更快，但小 MTU/旧版
-                            // Chrome 会拒绝 >20B 的写；此处减半重试，最低退到 20，避免整次失败。
-                            if (size > MIN_CHUNK) {
-                                const next = Math.max(MIN_CHUNK, size >> 1);
+                            // Chrome 会拒绝超大写入；此处按档位逐级降级（512→256→…→20），
+                            // 避免整次传输因一次大包失败而中断。
+                            if (this._chunkIndex < this._chunkLadder.length - 1) {
+                                this._chunkIndex += 1;
+                                this._chunkSize = this._chunkLadder[this._chunkIndex];
                                 logWebUsb(
-                                    `BLE 写入 ${size}B 失败(${error?.name || error})，降为 ${next}B 重试`
+                                    `BLE 写入 ${size}B 失败(${error?.name || error})，降为 ${this._chunkSize}B 重试`
                                 );
-                                this._chunkSize = next;
                                 continue;
                             }
                             throw error;

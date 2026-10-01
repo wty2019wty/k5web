@@ -28,6 +28,7 @@
   import { useI18n } from 'vue-i18n';
   import { useClipboard } from '@vueuse/core';
   import { useAppStore } from '@/store';
+  import { BLE_CHUNK_OPTIONS, BLE_CHUNK_AUTO } from '@/utils/ble-serial/index.js';
   import Block from './block.vue';
 
   const emit = defineEmits(['cancel']);
@@ -62,11 +63,23 @@
       type: 'number',
     },
   ]);
+  // BLE 写分片档位：512/256/128/64/32/20 + 自动
+  const bleChunkOpts = computed(() => [
+    ...BLE_CHUNK_OPTIONS.map((value) => ({ label: String(value), value })),
+    { label: t('settings.bleChunkAuto'), value: BLE_CHUNK_AUTO },
+  ]);
   const othersOpts = computed(() => [
     {
       name: 'settings.colorWeak',
       key: 'colorWeak',
       defaultVal: appStore.colorWeak,
+    },
+    {
+      name: 'settings.bleChunkSize',
+      key: 'bleChunkSize',
+      defaultVal: appStore.bleChunkSize,
+      type: 'select',
+      options: bleChunkOpts.value,
     },
   ]);
 
