@@ -22,8 +22,12 @@ export const BLE_NUS_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 export const BLE_NUS_WRITE = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // 网页 -> 设备（写）
 export const BLE_NUS_NOTIFY = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // 设备 -> 网页（通知）
 
-// 最小 ATT MTU(23) 对应的有效负载为 20 字节；按此分片可兼容任何桥接器。
+// BLE 写分片大小。实际可用负载 = 协商 MTU - 3：
+//   - 默认 MTU 23 -> 20 字节（兼容性下限）
+//   - 桥接器请求 MTU 512（ESP32C3_NUS_BLE/sdkconfig.defaults），可安全用大包提速（刷机尤其明显）
+// 想提速可把 DEFAULT_CHUNK 调到 100；写失败会自动减半重试，最低退到 MIN_CHUNK，无需担心兼容性。
 const DEFAULT_CHUNK = 20;
+const MIN_CHUNK = 20; // 最小 ATT MTU(23) 的有效负载，兼容性下限
 // 单次连接内最多打印多少条原始收发日志（避免拖慢主线程、掩盖丢字节）
 const MAX_VERBOSE_LOGS = 60;
 
@@ -149,14 +153,31 @@ export class BleSerialPort {
                 write: async (chunk) => {
                     const data = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk);
                     if (!data.length) return;
-                    for (let offset = 0; offset < data.length; offset += this._chunkSize) {
+                    let offset = 0;
+                    while (offset < data.length) {
                         if (!this._opened) throw new Error('BLE 已断开');
-                        const slice = data.subarray(offset, offset + this._chunkSize);
+                        const size = Math.min(this._chunkSize, data.length - offset);
+                        const slice = data.subarray(offset, offset + size);
                         this._txCount += 1;
                         if (this._txCount <= MAX_VERBOSE_LOGS || isDebugVerbose()) {
                             logWebUsb(`BLE out#${this._txCount} ${fmtHex(slice)}`);
                         }
-                        await this._writeChunk(slice);
+                        try {
+                            await this._writeChunk(slice);
+                            offset += size;
+                        } catch (error) {
+                            // 实际可用负载 = 协商 MTU - 3。大 MTU 时大包更快，但小 MTU/旧版
+                            // Chrome 会拒绝 >20B 的写；此处减半重试，最低退到 20，避免整次失败。
+                            if (size > MIN_CHUNK) {
+                                const next = Math.max(MIN_CHUNK, size >> 1);
+                                logWebUsb(
+                                    `BLE 写入 ${size}B 失败(${error?.name || error})，降为 ${next}B 重试`
+                                );
+                                this._chunkSize = next;
+                                continue;
+                            }
+                            throw error;
+                        }
                     }
                 },
                 abort: () => {
