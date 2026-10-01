@@ -12,7 +12,7 @@ K5Web 用于对兼容业余无线电台 UV-K5 写频、更新固件、写入星�
 | 平台 | 连接方式 | 状态 |
 |------|----------|------|
 | 桌面 Chrome / Edge / Opera | Web Serial API | 稳定，推荐 |
-| 桌面 / 安卓 Chrome | Web Bluetooth (BLE-NUS 桥接器) | 可用，需 BLE-UART 桥接硬件 |
+| 桌面 / 安卓 Chrome | Web Bluetooth (BLE-NUS 桥接器) | 可用，需 BLE-UART 桥接硬件 **实验性** |
 | 安卓 Chrome（OTG + USB 串口写频线） | WebUSB + 多芯片驱动 | **实验性** |
 | iOS / 其他浏览器 | — | 不支持 |
 
@@ -47,30 +47,68 @@ K5Web 用于对兼容业余无线电台 UV-K5 写频、更新固件、写入星�
 
 诊断工具：仓库根目录 `android-webusb-ch341.html` 可单独用于验证手机能否通过 WebUSB 连接 CH340。
 
-### 蓝牙 BLE（NUS 桥接器）
+### 蓝牙 BLE（NUS 桥接器）（实验性）
 
-当 USB 串口不可用（例如手机没有 OTG 线、或希望无线写频）时，可改用 **BLE-UART 桥接器**：设备侧提供一个跑 **Nordic UART Service (NUS)** 的蓝牙模块（如 ESP32-C3 的 `ble_uart` 组件），把 BLE 收到的字节原样转发到电台串口。
+当 USB 串口不可用（例如手机没有 OTG 线、或希望无线写频）时，可改用 **BLE-UART 桥接器**：把一块 ESP32-C3 变成「无线 USB-TTL 串口线」，手机/电脑浏览器通过 Web Bluetooth 连上它，即可像串口线一样与电台通信。
 
-**UUID（与 `ble_uart` 组件一致，实现见 `src/utils/ble-serial/`）：**
+```
+Chrome/Edge 网页 (Web Bluetooth)
+        │  BLE GATT：写 RX / 通知 TX（NUS 布局）
+        ▼
+   ESP32-C3（ESP-IDF + NimBLE，NUS 桥接固件）
+        │  UART（3.3V TTL）
+        ▼
+   UV-K5 / UV-K6 电台
+```
 
-| 用途 | UUID |
-|------|------|
-| Service（NUS） | `6e400001-b5a3-f393-e0a9-e50e24dcca9e` |
-| 网页 → 设备（写） | `6e400002-b5a3-f393-e0a9-e50e24dcca9e` |
-| 设备 → 网页（通知） | `6e400003-b5a3-f393-e0a9-e50e24dcca9e` |
+**桥接硬件/固件项目：** [wty2019wty/ESP32C3_NUS_BLE](https://github.com/wty2019wty/ESP32C3_NUS_BLE)
+
+- 基于 ESP-IDF 官方 `ble_uart_service` 例程的 `common/ble_uart` 组件（即标准 NUS 的 GATT 布局），明文免配对
+- 支持网页端动态修改波特率、`B2U`/`U2B`/`DROP` 计数与 `SELFTEST` 环回自检，便于排障
+
+**GATT / UUID（与 `ble_uart` 组件一致，K5Web 实现见 `src/utils/ble-serial/`）：**
+
+| 用途 | UUID | 属性 |
+|------|------|------|
+| Service（NUS） | `6e400001-b5a3-f393-e0a9-e50e24dcca9e` | — |
+| RX（网页 → 设备） | `6e400002-b5a3-f393-e0a9-e50e24dcca9e` | Write / Write Without Response |
+| TX（设备 → 网页） | `6e400003-b5a3-f393-e0a9-e50e24dcca9e` | Notify |
+
+**接线（与上述项目默认一致）：**
+
+| ESP32-C3 | 电台 (DUT) |
+|----------|------------|
+| GPIO4（`BRIDGE_UART_TX`） | 电台 **RX** |
+| GPIO5（`BRIDGE_UART_RX`） | 电台 **TX** |
+| GND | GND |
+
+> C3 为 **3.3V TTL**
+> 默认使用 **UART1**，避开 UART0 控制台；引脚/端口/默认波特率可在 `idf.py menuconfig → BLE <-> UART 桥接配置` 修改。
 
 **使用条件：**
 
-- Chrome / Edge（桌面或安卓），站点需 HTTPS 或 `http://localhost`
-- 打开系统蓝牙，且桥接器处于可发现/已配对状态
+- 安卓 Chrome 152.0.7977.75 (可以试试其他版本，可能不支持)
+- 站点需 HTTPS（`http://localhost` 亦可）
+- 桌面 / 安卓的 Chrome / Edge，且支持 Web Bluetooth
+- 打开系统蓝牙，广播名形如 `C3-UART-XXXX`
 - iOS Safari 不支持 Web Bluetooth
 
 **行为说明：**
 
-- K5Web 对 BLE 只做**字节透传**，不发送 `BAUD/STATUS/FLUSH` 等控制帧；请让桥接器的 UART 波特率与固件一致（常规写频为 `38400`，UVE5 刷机为 `115200`）
+- 电台数据为**字节透传**；此外 K5Web 会识别桥接器的控制帧（魔术前缀 `ESC B L`，即 `0x1B 0x42 0x4C`）：
+  - 连接后自动下发 `BAUD=<波特率>` + `FLUSH`，把桥接器 UART 切到本次连接所需波特率（常规写频 `38400`，UVE5 刷机 `115200`），**无需手动配置**
+  - 若未收到桥接器主动上报的 `READY`，会先用 `STATUS` 探测一次；对端不是 ESC-BL 桥接器（普通 NUS 透传设备）时不会下发任何控制命令
 - 网页 → 设备按最小 ATT MTU 分片（20 字节）发送，兼容性优先
 - 自动回退时，若浏览器的“用户手势”已过期，会提示**再次点击“连接”**即可直接用蓝牙连接
 - 长时间刷固件请保持页面前台，避免浏览器后台节流
+
+**排障建议：**
+
+- 连接后若握手失败，先在桥接器自带网页点「读取状态」或看日志里的 `STATUS BAUD … B2U … U2B … DROP …`：
+  - `B2U` 不涨 → 网页 → 设备方向未转发
+  - `U2B` 恒为 0 → 设备 → 网页方向未通（检查 TX/RX 是否接反、是否落在 GPIO9 等 strapping 脚）
+  - `DROP` 持续增长 → BLE 写得太快，桥接缓冲溢出；可加大 `BRIDGE_BUF_SIZE` 或降速
+- 上电默认波特率为 `115200`；K5Web 会在连接时自动改为所需值，若手动用过其它工具，复位桥接器即可恢复默认
 
 ## 讨论
 - QQ 群：957225277  （K5Web相关）
@@ -114,6 +152,9 @@ npm run build
 
 ### 我的固件：
     https://github.com/silenty4ng/uv-k5-firmware-chinese-lts 
+
+### 蓝牙 BLE 串口桥接器（ESP32-C3 / NUS）：
+    https://github.com/wty2019wty/ESP32C3_NUS_BLE
 
 ## 感谢项目
 - https://github.com/whosmatt/uvmod

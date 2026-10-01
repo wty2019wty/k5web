@@ -865,14 +865,15 @@ let bleFallbackArmed = false;
  * 通过 Web Bluetooth(NUS) 建立串口连接。
  * 成功返回 SerialPort 兼容对象；用户取消或无蓝牙返回 null。
  */
-async function connectBle() {
+async function connectBle(baudRate = 38400) {
     if (!hasBleSupport()) {
         logWebUsb('BLE 不可用：navigator.bluetooth 缺失');
         return null;
     }
     try {
         setDebugTransport('ble');
-        const port = await requestBleSerialPort();
+        // baudRate 会作为桥接器 UART 波特率下发（K5/K6 常规 38400，UVE5 刷机 115200）
+        const port = await requestBleSerialPort({ baudRate });
         const info = (port.getInfo && port.getInfo()) || {};
         logWebUsb(`BLE 连接成功 name=${info.bluetoothName || ''}`);
         return createDiagPort(port);
@@ -914,7 +915,7 @@ async function connect() {
     // 0) 上一轮回退时用户手势已过期，本次点击优先用蓝牙
     if (bleFallbackArmed && bleSupported) {
         bleFallbackArmed = false;
-        return connectBle();
+        return connectBle(baudRate);
     }
 
     // 1) 原生 Web Serial（桌面 Chrome/Edge；安卓较少见）
@@ -952,7 +953,7 @@ async function connect() {
         }
         // 桌面用户在 Web Serial 中取消：跳过 WebUSB，直接进入蓝牙回退。
         if (serialCancelled && !isAndroid) {
-            return bleSupported ? connectBle() : null;
+            return bleSupported ? connectBle(baudRate) : null;
         }
     }
 
@@ -972,7 +973,7 @@ async function connect() {
 
     // 3) 蓝牙 BLE 回退（NUS 桥接器）
     if (bleSupported) {
-        return connectBle();
+        return connectBle(baudRate);
     }
 
     // 没有可用回退：报出 WebUSB 的真实错误（用户取消除外），否则提示浏览器不支持。
