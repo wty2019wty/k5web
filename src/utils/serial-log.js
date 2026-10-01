@@ -7,8 +7,47 @@
 
 const DEBUG_LOG = [];
 const DEBUG_LOG_MAX = 800;
+// 允许其他模块（如 BLE）在浮层工具栏注入自定义控件；浮层被关闭再重建时自动重新挂载。
+// match(mode) 可选：仅当返回 true 时才显示，用于把控件限定在特定传输方式（如仅 BLE）。
+const debugControls = [];
+let debugBarEl = null;
+export function addDebugControl(createEl, match) {
+    if (typeof createEl !== 'function') return;
+    debugControls.push({ createEl, match: typeof match === 'function' ? match : null, el: null });
+    mountDebugControls();
+}
+function isControlVisible(item) {
+    try {
+        return !item.match || item.match(debugTransportMode);
+    } catch {
+        return false;
+    }
+}
+function mountDebugControls() {
+    if (!debugBarEl || !debugBarEl.isConnected) return;
+    for (const item of debugControls) {
+        try {
+            if (!item.el) {
+                const el = item.createEl();
+                if (!el) continue;
+                item.el = el;
+                debugBarEl.appendChild(el);
+            }
+            item.el.style.display = isControlVisible(item) ? '' : 'none';
+        } catch {}
+    }
+}
+function applyDebugControlVisibility() {
+    for (const item of debugControls) {
+        if (!item.el) continue;
+        try {
+            item.el.style.display = isControlVisible(item) ? '' : 'none';
+        } catch {}
+    }
+}
 // 桌面走 Web Serial、安卓走 WebUSB；标题随连接方式更新。
 let debugTransportLabel = 'WebUSB';
+let debugTransportMode = 'webusb';
 // DOM 渲染与日志收集解耦：默认收起时不碰 DOM，展开时按帧批量追加。
 // 每收到一个数据块就同步 appendChild + scrollTop 会强制重排并阻塞主线程，
 // 导致 CH340 的小接收 FIFO 溢出、静默丢字节。
@@ -51,6 +90,8 @@ export function setDebugOverlayEnabled(v) {
         const box = document.getElementById('__webusb_debug');
         if (box) box.remove();
         debugBodyEl = null;
+        debugBarEl = null;
+        for (const item of debugControls) item.el = null;
         debugExpanded = false;
         debugPending = [];
     }
@@ -62,13 +103,18 @@ export function isDebugOverlayEnabled() {
 
 /** @param {'webserial'|'webusb'|'ble'} mode */
 export function setDebugTransport(mode) {
+    debugTransportMode = mode === 'webserial' || mode === 'ble' ? mode : 'webusb';
     debugTransportLabel =
         mode === 'webserial' ? 'Web Serial' : mode === 'ble' ? 'Web Bluetooth (BLE)' : 'WebUSB';
     try {
-        if (typeof document === 'undefined' || !debugOverlayEnabled) return;
+        if (typeof document === 'undefined') return;
         // Only update an existing overlay; do not create one just to rename the title.
-        const title = document.getElementById('__webusb_debug_title');
-        if (title) title.textContent = `${debugTransportLabel} 日志`;
+        if (debugOverlayEnabled) {
+            const title = document.getElementById('__webusb_debug_title');
+            if (title) title.textContent = `${debugTransportLabel} 日志`;
+        }
+        // 切换传输方式时，同步刷新“仅某模式显示”的注入控件。
+        applyDebugControlVisibility();
     } catch {}
 }
 
@@ -121,7 +167,8 @@ function ensureDebugOverlay() {
         'padding:6px 8px', 'border-radius:6px', 'box-shadow:0 0 8px rgba(0,0,0,.5)',
     ].join(';');
     const bar = document.createElement('div');
-    bar.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:4px;color:#fff;flex:0 0 auto';
+    bar.id = '__webusb_debug_bar';
+    bar.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px;color:#fff;flex:0 0 auto';
     const title = document.createElement('span');
     title.id = '__webusb_debug_title';
     title.textContent = `${debugTransportLabel} 日志`;
@@ -162,8 +209,12 @@ function ensureDebugOverlay() {
     body.style.cssText = 'display:none;overflow:auto;flex:1 1 auto;min-height:0;max-height:36vh';
     box.append(bar, body);
     document.body.appendChild(box);
+    debugBarEl = bar;
     debugBodyEl = body;
     debugExpanded = false;
+    // 注入其它模块注册的控件（如 BLE 写分片选择器，仅 BLE 模式显示）。
+    // 必须在 bar 入文档之后再挂载，否则 isConnected 为 false 会被跳过。
+    mountDebugControls();
 }
 
 export function fmtHex(bytes, max = 32) {

@@ -17,6 +17,8 @@ export default {
   'settings.footer': '底部',
   'settings.otherSettings': '其他设置',
   'settings.colorWeak': '色弱模式',
+  'settings.bleChunkSize': 'BLE 写分片 (字节)',
+  'settings.bleChunkAuto': '自动',
   'settings.alertContent':
     '配置之后仅是临时生效，要想真正作用于项目，点击下方的 "复制配置" 按钮，将配置替换到 settings.json 中即可。',
   'settings.copySettings': '复制配置',
