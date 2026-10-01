@@ -1,4 +1,5 @@
 import { hasWebUsbSupport, requestWebUsbSerialPort } from './webusb-serial/index.js';
+import { hasBleSupport, requestBleSerialPort } from './ble-serial/index.js';
 import { logWebUsb, fmtHex, setDebugTransport, isDebugVerbose } from './serial-log.js';
 
 const FONT_MAPPING_117 = {
@@ -855,28 +856,79 @@ function globalRelease(target = 'all'){
     } catch {}
 }
 
+// 蓝牙自动回退：当 USB 线路失败/取消后，Chrome 的临时用户手势往往已过期，
+// navigator.bluetooth.requestDevice 会被拒。此时置位，下一次点击“连接”优先走
+// 蓝牙（携带新的用户手势），保证“自动回退”真正可用。
+let bleFallbackArmed = false;
+
+/**
+ * 通过 Web Bluetooth(NUS) 建立串口连接。
+ * 成功返回 SerialPort 兼容对象；用户取消或无蓝牙返回 null。
+ */
+async function connectBle() {
+    if (!hasBleSupport()) {
+        logWebUsb('BLE 不可用：navigator.bluetooth 缺失');
+        return null;
+    }
+    try {
+        setDebugTransport('ble');
+        const port = await requestBleSerialPort();
+        const info = (port.getInfo && port.getInfo()) || {};
+        logWebUsb(`BLE 连接成功 name=${info.bluetoothName || ''}`);
+        return createDiagPort(port);
+    } catch (error) {
+        const name = error?.name || '';
+        const message = error?.message || String(error);
+        if (name === 'NotFoundError') {
+            // 用户在系统蓝牙选择框中取消
+            logWebUsb('BLE requestDevice 已取消');
+            return null;
+        }
+        if (name === 'NotAllowedError' || name === 'SecurityError') {
+            // 多为自动回退时用户手势已过期：下次点击优先使用蓝牙
+            logWebUsb(`BLE 需要用户手势: ${name} ${message}`);
+            bleFallbackArmed = true;
+            alert('蓝牙连接需要由点击触发：请再次点击“连接”按钮即可改用蓝牙(BLE)连接。');
+            return null;
+        }
+        logWebUsb(`BLE 连接失败: ${name} ${message}`);
+        console.error('BLE connect failed:', error);
+        alert(message);
+        return null;
+    }
+}
+
 async function connect() {
     const baudRate = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 38400;
     const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+    const serialSupported = typeof navigator !== 'undefined' && 'serial' in navigator;
+    const usbSupported = hasWebUsbSupport();
+    const bleSupported = hasBleSupport();
 
-    // Desktop prefers Web Serial; Android may fall through to WebUSB below.
-    setDebugTransport(isAndroid ? 'webusb' : ('serial' in navigator ? 'webserial' : 'webusb'));
-    logWebUsb(`connect() baud=${baudRate} android=${isAndroid} webSerial=${'serial' in navigator} webUsb=${hasWebUsbSupport()}`);
+    // 连接优先级：Web Serial（桌面）> WebUSB（安卓 Chrome）> 蓝牙 BLE（自动回退）
+    setDebugTransport(serialSupported ? 'webserial' : usbSupported ? 'webusb' : 'ble');
+    logWebUsb(
+        `connect() baud=${baudRate} android=${isAndroid} webSerial=${serialSupported} webUsb=${usbSupported} ble=${bleSupported}`
+    );
 
-    // 1) Native Web Serial (desktop Chrome/Edge; rare on Android)
-    if ('serial' in navigator) {
+    // 0) 上一轮回退时用户手势已过期，本次点击优先用蓝牙
+    if (bleFallbackArmed && bleSupported) {
+        bleFallbackArmed = false;
+        return connectBle();
+    }
+
+    // 1) 原生 Web Serial（桌面 Chrome/Edge；安卓较少见）
+    if (serialSupported) {
         let port = undefined
+        let serialCancelled = false;
         try {
             port = await navigator.serial.requestPort();
             logWebUsb(`requestPort ok usbVendorId=0x${(port?.usbVendorId ?? 0).toString(16)} usbProductId=0x${(port?.usbProductId ?? 0).toString(16)}`);
         } catch(error) {
             logWebUsb(`requestPort 失败: ${error?.name || ''} ${error?.message || error}`);
             console.log('Web Serial requestPort: ' + error)
-            // Desktop: user cancelled or none selected — stop here.
-            // Android: serial often lists no USB device, fall through to WebUSB.
-            if (!isAndroid) {
-                return null;
-            }
+            // 用户取消选择（NotFoundError）：不再弹 WebUSB 选择框，必要时直接回退蓝牙。
+            if (error?.name === 'NotFoundError') serialCancelled = true;
         }
         if (port) {
             try {
@@ -894,28 +946,39 @@ async function connect() {
                 console.error('Error connecting to the serial port:', error);
                 // Close so the interface is free for WebUSB on Android.
                 try { await port.close(); } catch {}
-                if (!isAndroid) {
-                    return null;
-                }
-                // Android: CH340 often appears in Web Serial but open fails — fall through to WebUSB.
+                // 安卓：CH340 常在 Web Serial 中可见但 open 失败 —— 继续走 WebUSB。
+                // 桌面：继续尝试蓝牙回退。
             }
+        }
+        // 桌面用户在 Web Serial 中取消：跳过 WebUSB，直接进入蓝牙回退。
+        if (serialCancelled && !isAndroid) {
+            return bleSupported ? connectBle() : null;
         }
     }
 
-    // 2) WebUSB fallback (Android Chrome) — CH340/CP210x/PL2303/FTDI, EXPERIMENTAL
-    if (hasWebUsbSupport()) {
+    // 2) WebUSB 回退（安卓 Chrome / 无 Web Serial 的浏览器）—— 实验性
+    let usbError = null;
+    if (usbSupported && (isAndroid || !serialSupported)) {
         try {
             setDebugTransport('webusb');
             return await requestWebUsbSerialPort(baudRate);
         } catch (error) {
+            usbError = error;
             logWebUsb(`WebUSB serial connect failed: ${error?.name || ''} ${error?.message || error}`);
             console.error('WebUSB serial connect failed:', error);
-            // 用户取消选择设备（NotFoundError）时静默返回，与桌面 Web Serial 行为一致
-            if (error?.name !== 'NotFoundError') {
-                alert(String(error && error.message ? error.message : error));
-            }
-            return null;
+            // 不在此处 alert：先尝试蓝牙回退，全部失败后再报错。
         }
+    }
+
+    // 3) 蓝牙 BLE 回退（NUS 桥接器）
+    if (bleSupported) {
+        return connectBle();
+    }
+
+    // 没有可用回退：报出 WebUSB 的真实错误（用户取消除外），否则提示浏览器不支持。
+    if (usbError && usbError.name !== 'NotFoundError') {
+        alert(String(usbError.message || usbError));
+        return null;
     }
 
     // Single alert owned here; navbar must not also alert when connect() returns null.
@@ -2092,6 +2155,7 @@ function readSMSPacket(port) {
 export {
     connect,
     disconnect,
+    hasBleSupport,
     sendPacket,
     readPacket,
     uint8ArrayToString,
