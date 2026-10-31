@@ -884,7 +884,8 @@ async function connect() {
     //   · 也可能返回一个能 open 但收不到任何数据的“假端口”，之后的握手全部超时；
     //   · 即使失败回退，之前的串口选择框已经消耗了用户手势，requestDevice() 会抛
     //     SecurityError: Must be handling a user gesture to show a permission request.
-    // 所以在安卓上一律先走 WebUSB，绝不先碰原生 Web Serial。
+    // 所以在安卓上只要浏览器提供 WebUSB，就直接走 WebUSB，绝不先碰原生 Web Serial。
+    // 只有连 navigator.usb 都没有时，才退回下面的 Web Serial 分支（此时也没有别的选择）。
     if (isAndroid && hasWebUsbSupport()) {
         return await connectWebUsb(baudRate);
     }

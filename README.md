@@ -17,7 +17,7 @@ K5Web 用于对兼容业余无线电台 UV-K5 写频、更新固件、写入星�
 
 ### 安卓 WebUSB（实验性）
 
-安卓上 **不再尝试原生 Web Serial**：Chrome 148+ 在安卓上也会暴露 `navigator.serial`，但它驱动不了 CH340 这类厂商自定义设备（列表里没有 CH340，或能 `open` 却收不到任何数据），而且弹出过的串口选择框会消耗用户手势，让随后的 `navigator.usb.requestDevice()` 抛 `SecurityError`。因此安卓上一律直接通过 **WebUSB** 访问 CH340/CH341 写频线（实现见 `src/utils/webusb-ch341.js`，逻辑对齐 Linux `ch341.c`）。桌面的连接方式不变，仍然是 Web Serial。
+安卓上 **只要浏览器提供 WebUSB，就直接走 WebUSB，不再尝试原生 Web Serial**：Chrome 148+ 在安卓上也会暴露 `navigator.serial`，但它驱动不了 CH340 这类厂商自定义设备（列表里没有 CH340，或能 `open` 却收不到任何数据），而且弹出过的串口选择框会消耗用户手势，让随后的 `navigator.usb.requestDevice()` 抛 `SecurityError`。只有连 `navigator.usb` 都不存在时，才会退回 Web Serial（此时也没有别的选择）。因此安卓上默认通过 **WebUSB** 访问 CH340/CH341 写频线（实现见 `src/utils/webusb-ch341.js`，逻辑对齐 Linux `ch341.c`）。桌面的连接方式不变，仍然是 Web Serial。
 
 **使用条件：**
 
