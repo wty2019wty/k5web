@@ -490,8 +490,8 @@ async function ch341Configure(baudRate) {
   setStep('init', 'done');
 
   // baud + lcr
-  let val = ch341GetDivisor(baudRate, false);
-  if (state.version > 0x27) val |= 1 << 7; // flush 32-byte buffer
+  // 无条件置位 bit 7（关闭“攒满 32 字节才上报”的 FIFO 行为），与可正常工作的实现一致。
+  let val = ch341GetDivisor(baudRate, false) | (1 << 7);
   await ctrlOut(dev, CH341.REQ_WRITE_REG, (CH341.REG_DIVISOR << 8) | CH341.REG_PRESCALER, val);
   if (state.version >= 0x30) {
     await ctrlOut(dev, CH341.REQ_WRITE_REG, (CH341.REG_LCR2 << 8) | CH341.REG_LCR, lcr8n1());
@@ -499,19 +499,23 @@ async function ch341Configure(baudRate) {
   log(`baud ${baudRate} → divisor word 0x${val.toString(16)}`, 'info');
   setStep('baud', 'done');
 
-  // handshake DTR|RTS, value = ~mcr
+  // handshake DTR|RTS, value = ~mcr（与 Linux 一致，保留高字节 0xff）
   state.mcr = CH341.BIT_DTR | CH341.BIT_RTS;
-  await ctrlOut(dev, CH341.REQ_MODEM_CTRL, (~state.mcr) & 0xff, 0);
+  await ctrlOut(dev, CH341.REQ_MODEM_CTRL, (~state.mcr) & 0xffff, 0);
   setStep('handshake', 'done');
 
   // flow control none
   await ctrlOut(dev, CH341.REQ_WRITE_REG, (CH341.REG_FLOW_CTL << 8) | CH341.REG_FLOW_CTL, 0x0000);
   setStep('flow', 'done');
 
-  // smoke status
-  const st = await ctrlIn(dev, CH341.REQ_READ_REG, 0x0706, 0, 2);
-  state.msr = (~st[0]) & CH341.BITS_MODEM_STAT;
-  log(`MSR raw=${hex(st)} → CTS=${!!(state.msr & CH341.BIT_CTS)} DSR=${!!(state.msr & CH341.BIT_DSR)} DCD=${!!(state.msr & CH341.BIT_DCD)}`, 'info');
+  // smoke status（仅诊断，失败不应影响连接）
+  try {
+    const st = await ctrlIn(dev, CH341.REQ_READ_REG, 0x0706, 0, 2);
+    state.msr = (~st[0]) & CH341.BITS_MODEM_STAT;
+    log(`MSR raw=${hex(st)} → CTS=${!!(state.msr & CH341.BIT_CTS)} DSR=${!!(state.msr & CH341.BIT_DSR)} DCD=${!!(state.msr & CH341.BIT_DCD)}`, 'info');
+  } catch (e) {
+    log(`读 MSR 失败（忽略）: ${e.message || e}`, 'warn');
+  }
 }
 
 function makeStreams() {
@@ -806,7 +810,7 @@ async function disconnect() {
   const dev = state.device;
   try {
     if (dev && dev.opened) {
-      try { await ctrlOut(dev, CH341.REQ_MODEM_CTRL, (~0) & 0xff, 0); } catch {}
+      try { await ctrlOut(dev, CH341.REQ_MODEM_CTRL, 0xffff, 0); } catch {}
       try { await dev.releaseInterface(state.iface); } catch {}
       try { await dev.close(); } catch {}
     }

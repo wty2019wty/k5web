@@ -165,8 +165,12 @@ async function ch341Configure(dev, baudRate) {
   await ctrlOut(dev, CH341.REQ_SERIAL_INIT, 0, 0);
 
   let val = ch341GetDivisor(baudRate);
-  // version > 0x27: flush partial 32-byte endpoint buffer
-  if (version > 0x27) val |= 1 << 7;
+  // 对齐可正常工作的实现（以及 uvstudio 已验证的版本）：无条件置位 bit 7。
+  // 该位作用是把 CH340/CH341 内部 FIFO 的“攒满 32 字节再上报”行为关掉；不置位时
+  // 短于 32 字节的应答（K5 握手回包只有 20 多字节）会一直卡在芯片里，读侧永远超时。
+  // Linux ch341.c 里写的是 `if (version > 0x27)`，注释也承认“至少有一个 0x27 的设备
+  // 这个位是反的”，所以这里不再按版本号判断。
+  val |= 1 << 7;
   await ctrlOut(
     dev,
     CH341.REQ_WRITE_REG,
@@ -183,7 +187,9 @@ async function ch341Configure(dev, baudRate) {
   }
 
   const mcr = CH341.BIT_DTR | CH341.BIT_RTS;
-  await ctrlOut(dev, CH341.REQ_MODEM_CTRL, ~mcr & 0xff, 0);
+  // Linux 传的是 u8 取反后的 wValue（0xff9f），高字节也保持一致，避免某些克隆芯片
+  // 把高位当成有效状态位。
+  await ctrlOut(dev, CH341.REQ_MODEM_CTRL, ~mcr & 0xffff, 0);
   await ctrlOut(
     dev,
     CH341.REQ_WRITE_REG,
@@ -191,8 +197,13 @@ async function ch341Configure(dev, baudRate) {
     0x0000
   );
 
-  // smoke-test modem status register
-  await ctrlIn(dev, CH341.REQ_READ_REG, 0x0706, 0, 2);
+  // 读一下 Modem 状态寄存器做连通性检查，但只是诊断用途：部分克隆芯片不支持该
+  // 读数（stall），不应因此让整次连接失败。
+  try {
+    await ctrlIn(dev, CH341.REQ_READ_REG, 0x0706, 0, 2);
+  } catch (e) {
+    logWebUsb(`读 MSR 失败（忽略）: ${e && e.message}`);
+  }
 
   return version;
 }
@@ -237,7 +248,8 @@ class WebUsbCh341Port {
           });
         },
         cancel: () => {
-          this._rxQueue = [];
+          // 不要清空 _rxQueue：队列里的字节还没交给上层 reader，丢掉会让下一次读取
+          // 从半帧中间开始（K5 协议会因此错位）。只唤醒挂起的 pull。
           if (this._rxWaiter) {
             this._rxWaiter.resolve();
             this._rxWaiter = null;
@@ -271,10 +283,15 @@ class WebUsbCh341Port {
           // Full-size final bulk packet stays buffered on CH340 until a short/ZLP arrives.
           if (data.length > 0 && data.length % this._epOutSize === 0) {
             this._transferOutCount += 1;
-            const zlp = await this._device.transferOut(this._epOut, new Uint8Array(0));
-            if (zlp.status !== 'ok') {
-              logWebUsb(`transferOut#${this._transferOutCount} ZLP failed status=${zlp.status}`);
-              throw new Error(`USB bulk OUT ZLP failed: ${zlp.status}`);
+            try {
+              const zlp = await this._device.transferOut(this._epOut, new Uint8Array(0));
+              if (zlp.status !== 'ok') {
+                logWebUsb(`transferOut#${this._transferOutCount} ZLP status=${zlp.status}（忽略）`);
+              }
+            } catch (e) {
+              // 数据已经写出去了，ZLP 只是收尾提示；部分 Chrome 版本会拒绝空 transferOut，
+              // 这里不能让它把整帧写入判为失败。
+              logWebUsb(`transferOut#${this._transferOutCount} ZLP 异常（忽略）: ${e && e.message}`);
             }
           }
         },
@@ -296,7 +313,7 @@ class WebUsbCh341Port {
       const mcr =
         (signals.dataTerminalReady ? CH341.BIT_DTR : 0) |
         (signals.requestToSend ? CH341.BIT_RTS : 0);
-      await ctrlOut(this._device, CH341.REQ_MODEM_CTRL, ~mcr & 0xff, 0);
+      await ctrlOut(this._device, CH341.REQ_MODEM_CTRL, ~mcr & 0xffff, 0);
     });
   }
 
@@ -331,7 +348,7 @@ class WebUsbCh341Port {
         this._writable = null;
       }
       try {
-        await ctrlOut(this._device, CH341.REQ_MODEM_CTRL, 0xff, 0);
+        await ctrlOut(this._device, CH341.REQ_MODEM_CTRL, 0xffff, 0);
       } catch {}
       try {
         await this._device.releaseInterface(this._iface);
@@ -366,15 +383,32 @@ class WebUsbCh341Port {
 
   async _readLoop() {
     logWebUsb('读循环已启动');
+    let stallRetries = 0;
     while (this._opened && this._device.opened) {
       try {
         const res = await this._device.transferIn(this._epIn, this._epInSize);
         if (!this._opened) break;
         this._transferInCount += 1;
-        if (res.status !== 'ok') {
-          logWebUsb(`transferIn#${this._transferInCount} status=${res.status}`);
+        if (res.status === 'stall') {
+          // endpoint halt：必须 clearHalt 才能继续，否则这里会变成忙等死循环。
+          logWebUsb(`transferIn#${this._transferInCount} stall，clearHalt`);
+          try {
+            await this._device.clearHalt('in', this._epIn);
+          } catch (e) {
+            logWebUsb(`clearHalt 失败: ${e && e.message}`);
+            break;
+          }
+          stallRetries += 1;
+          if (stallRetries > 8) break;
           continue;
         }
+        if (res.status !== 'ok') {
+          logWebUsb(`transferIn#${this._transferInCount} status=${res.status}`);
+          // 短暂的协议错误可以继续，连续失败就退出，避免空转。
+          if (++stallRetries > 8) break;
+          continue;
+        }
+        stallRetries = 0;
         if (res.data && res.data.byteLength) {
           const bytes = new Uint8Array(
             res.data.buffer,
