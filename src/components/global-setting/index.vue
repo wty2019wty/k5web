@@ -23,17 +23,31 @@
 </template>
 
 <script lang="ts" setup>
-  import { computed } from 'vue';
+  import { computed, onMounted, onUnmounted } from 'vue';
   import { Message } from '@arco-design/web-vue';
   import { useI18n } from 'vue-i18n';
   import { useClipboard } from '@vueuse/core';
   import { useAppStore } from '@/store';
-  import { BLE_CHUNK_OPTIONS, BLE_CHUNK_AUTO } from '@/utils/ble-serial/index.js';
+  import {
+    BLE_CHUNK_OPTIONS,
+    BLE_CHUNK_AUTO,
+    subscribeBleChunkSetting,
+  } from '@/utils/ble-serial/index.js';
   import Block from './block.vue';
 
   const emit = defineEmits(['cancel']);
 
   const appStore = useAppStore();
+  // 浮层里的分片选择器也写 localStorage：订阅它，保持抽屉显示的 appStore 值同步。
+  let unsubscribeBleChunk: (() => void) | null = null;
+  onMounted(() => {
+    unsubscribeBleChunk = subscribeBleChunkSetting((value) => {
+      appStore.bleChunkSize = value;
+    });
+  });
+  onUnmounted(() => {
+    if (unsubscribeBleChunk) unsubscribeBleChunk();
+  });
   const { t } = useI18n();
   const { copy } = useClipboard();
   const visible = computed(() => appStore.globalSettings);
@@ -63,7 +77,7 @@
       type: 'number',
     },
   ]);
-  // BLE 写分片档位：512/256/128/64/32/20 + 自动
+  // BLE 写分片档位：509/256/128/64/32/20 + 自动
   const bleChunkOpts = computed(() => [
     ...BLE_CHUNK_OPTIONS.map((value) => ({ label: String(value), value })),
     { label: t('settings.bleChunkAuto'), value: BLE_CHUNK_AUTO },

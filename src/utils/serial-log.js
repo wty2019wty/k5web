@@ -9,11 +9,17 @@ const DEBUG_LOG = [];
 const DEBUG_LOG_MAX = 800;
 // 允许其他模块（如 BLE）在浮层工具栏注入自定义控件；浮层被关闭再重建时自动重新挂载。
 // match(mode) 可选：仅当返回 true 时才显示，用于把控件限定在特定传输方式（如仅 BLE）。
+// createEl 可返回 Element，或 { el, dispose }（dispose 在浮层销毁时调用以释放订阅/监听）。
 const debugControls = [];
 let debugBarEl = null;
 export function addDebugControl(createEl, match) {
     if (typeof createEl !== 'function') return;
-    debugControls.push({ createEl, match: typeof match === 'function' ? match : null, el: null });
+    debugControls.push({
+        createEl,
+        match: typeof match === 'function' ? match : null,
+        el: null,
+        dispose: null,
+    });
     mountDebugControls();
 }
 function isControlVisible(item) {
@@ -28,13 +34,25 @@ function mountDebugControls() {
     for (const item of debugControls) {
         try {
             if (!item.el) {
-                const el = item.createEl();
-                if (!el) continue;
+                const created = item.createEl();
+                if (!created) continue;
+                const el = created.el || created;
+                if (!el || typeof el.appendChild !== 'function') continue;
                 item.el = el;
+                item.dispose = typeof created.dispose === 'function' ? created.dispose : null;
                 debugBarEl.appendChild(el);
             }
             item.el.style.display = isControlVisible(item) ? '' : 'none';
         } catch {}
+    }
+}
+function disposeDebugControls() {
+    for (const item of debugControls) {
+        try {
+            if (typeof item.dispose === 'function') item.dispose();
+        } catch {}
+        item.dispose = null;
+        item.el = null;
     }
 }
 function applyDebugControlVisibility() {
@@ -91,7 +109,7 @@ export function setDebugOverlayEnabled(v) {
         if (box) box.remove();
         debugBodyEl = null;
         debugBarEl = null;
-        for (const item of debugControls) item.el = null;
+        disposeDebugControls();
         debugExpanded = false;
         debugPending = [];
     }
@@ -214,6 +232,8 @@ function ensureDebugOverlay() {
     debugExpanded = false;
     // 注入其它模块注册的控件（如 BLE 写分片选择器，仅 BLE 模式显示）。
     // 必须在 bar 入文档之后再挂载，否则 isConnected 为 false 会被跳过。
+    // 若浮层是被外部移除后重建，旧控件需先 dispose 再重新创建，避免残留失效订阅。
+    disposeDebugControls();
     mountDebugControls();
 }
 

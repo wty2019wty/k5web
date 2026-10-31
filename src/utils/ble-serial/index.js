@@ -24,13 +24,40 @@ export const BLE_NUS_NOTIFY = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // 设备 
 
 // BLE 写分片档位（字节）。实际可用负载 = 协商 MTU - 3：
 //   - 默认 MTU 23 -> 20 字节（兼容性下限）
-//   - 桥接器请求 MTU 512（ESP32C3_NUS_BLE/sdkconfig.defaults），大包可显著提速（刷机尤其明显）
-// 档位：512 / 256 / 128 / 64 / 32 / 20；或 "auto"：从 512 逐级降级并记住本次可用值。
-export const BLE_CHUNK_OPTIONS = [512, 256, 128, 64, 32, 20];
+//   - 桥接器请求 MTU 512（ESP32C3_NUS_BLE/sdkconfig.defaults:
+//     CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=512），写命令头占 3 字节，
+//     故单包最大负载为 509 字节。按 512 发送必然超长失败并白触发一次降级。
+// 档位：509 / 256 / 128 / 64 / 32 / 20；或 "auto"：从 509 逐级降级并记住本次可用值。
+// 若浏览器实现 characteristic.maxWriteWithoutResponseSize，会据此进一步收紧。
+export const BLE_CHUNK_OPTIONS = [509, 256, 128, 64, 32, 20];
 export const BLE_CHUNK_AUTO = 'auto';
 const CHUNK_STORAGE_KEY = 'k5web.bleChunkSize';
 // 本次会话内“自动”模式已确认可用的最大分片：重连时直接用它，省去再次降级。
 let autoChunkHint = null;
+
+// 档位变更订阅：浮层选择器与设置抽屉都写 localStorage，用订阅保持两处显示一致。
+const chunkSettingListeners = new Set();
+
+/**
+ * 订阅 BLE 分片档位变更（设置抽屉 / 浮层选择器任一入口修改都会触发）。
+ * @param {(value: number | 'auto') => void} listener
+ * @returns {() => void} 取消订阅
+ */
+export function subscribeBleChunkSetting(listener) {
+    if (typeof listener !== 'function') return () => {};
+    chunkSettingListeners.add(listener);
+    return () => {
+        chunkSettingListeners.delete(listener);
+    };
+}
+
+function notifyChunkSetting(value) {
+    for (const listener of chunkSettingListeners) {
+        try {
+            listener(value);
+        } catch {}
+    }
+}
 
 /** 读取用户选择的 BLE 写分片档位（localStorage 持久化；默认 auto）。 */
 export function getBleChunkSetting() {
@@ -43,39 +70,65 @@ export function getBleChunkSetting() {
     return BLE_CHUNK_AUTO;
 }
 
-/** 保存 BLE 写分片档位到 localStorage。 */
+/** 保存 BLE 写分片档位到 localStorage，并通知订阅者。 */
 export function setBleChunkSetting(value) {
+    let normalized = null;
+    if (value === BLE_CHUNK_AUTO) {
+        normalized = BLE_CHUNK_AUTO;
+    } else if (BLE_CHUNK_OPTIONS.includes(Number(value))) {
+        normalized = Number(value);
+    }
+    if (normalized === null) return;
     try {
-        if (value === BLE_CHUNK_AUTO) {
-            localStorage.setItem(CHUNK_STORAGE_KEY, BLE_CHUNK_AUTO);
-        } else if (BLE_CHUNK_OPTIONS.includes(Number(value))) {
-            localStorage.setItem(CHUNK_STORAGE_KEY, String(Number(value)));
-        }
+        localStorage.setItem(CHUNK_STORAGE_KEY, String(normalized));
     } catch {}
+    notifyChunkSetting(normalized);
 }
 
-/** 生成降级阶梯：auto 从 512 起；固定档从所选值起，仍允许向下（不高于所选值）。 */
-function buildChunkLadder(setting) {
+/** 生成降级阶梯：auto 从 509 起；固定档从所选值起，仍允许向下（不高于所选值）。
+ *  maxPayload 为浏览器上报的真实单包上限（maxWriteWithoutResponseSize），有则收紧。 */
+function buildChunkLadder(setting, maxPayload = null) {
+    const cap = (value) =>
+        maxPayload && maxPayload > 0 ? Math.min(value, maxPayload) : value;
+    let start;
     if (setting === BLE_CHUNK_AUTO) {
-        const start =
+        start = cap(
             autoChunkHint && BLE_CHUNK_OPTIONS.includes(autoChunkHint)
                 ? autoChunkHint
-                : BLE_CHUNK_OPTIONS[0];
-        return BLE_CHUNK_OPTIONS.filter((v) => v <= start);
+                : BLE_CHUNK_OPTIONS[0]
+        );
+    } else {
+        const fixed = BLE_CHUNK_OPTIONS.includes(Number(setting))
+            ? Number(setting)
+            : BLE_CHUNK_OPTIONS[0];
+        start = cap(fixed);
     }
-    const fixed = BLE_CHUNK_OPTIONS.includes(setting) ? setting : BLE_CHUNK_OPTIONS[0];
-    return [fixed, ...BLE_CHUNK_OPTIONS.filter((v) => v < fixed)];
+    const ladder = BLE_CHUNK_OPTIONS.filter((v) => v <= start).map(cap);
+    // 真实上限可能落在档位之间（如 MTU 247 -> 244）：优先用它，再逐级向下降级。
+    if (
+        maxPayload &&
+        maxPayload > 0 &&
+        maxPayload <= start &&
+        (!ladder.length || ladder[0] < maxPayload)
+    ) {
+        ladder.unshift(maxPayload);
+    }
+    return [...new Set(ladder)];
 }
 
 // 把「写分片」选择器挂到串口日志浮层的工具栏，连接前即可快速切换（下次连接生效）。
 // 仅在 BLE 传输模式下显示，Web Serial / WebUSB 时隐藏。
-let chunkStatusEl = null; // 工具栏上显示“本次连接实际生效分片”的节点
-let lastEffectiveChunk = null; // 最近一次生效的分片，浮层重建后用于回填
-function updateChunkStatus(size) {
-    lastEffectiveChunk = size || null;
+let chunkStatusEl = null; // 工具栏上显示“本次连接分片”的节点
+let lastChunkState = { size: null, verified: false }; // 最近一次分片状态，浮层重建后用于回填
+function chunkStatusText(state) {
+    if (!state.size) return '';
+    return `${state.verified ? '生效' : '目标'} ${state.size}B`;
+}
+function updateChunkStatus(size, verified = false) {
+    lastChunkState = { size: size || null, verified: !!verified };
     if (!chunkStatusEl) return;
     try {
-        chunkStatusEl.textContent = size ? `生效 ${size}B` : '';
+        chunkStatusEl.textContent = chunkStatusText(lastChunkState);
     } catch {}
 }
 addDebugControl(() => {
@@ -105,13 +158,25 @@ addDebugControl(() => {
         );
     };
     wrap.appendChild(select);
-    // 本次连接实际生效的分片（连接时和降级时更新）。
+    // 本次连接的分片状态（目标 = 待验证；生效 = 已成功写出过该整档）。
     const status = document.createElement('span');
     status.style.cssText = 'opacity:.85';
-    status.textContent = lastEffectiveChunk ? `生效 ${lastEffectiveChunk}B` : '';
+    status.textContent = chunkStatusText(lastChunkState);
     wrap.appendChild(status);
     chunkStatusEl = status;
-    return wrap;
+    // 设置抽屉改动分片档位时，同步浮层下拉，避免两处显示不一致。
+    const unsubscribe = subscribeBleChunkSetting((value) => {
+        try {
+            select.value = String(value);
+        } catch {}
+    });
+    return {
+        el: wrap,
+        dispose: () => {
+            unsubscribe();
+            if (chunkStatusEl === status) chunkStatusEl = null;
+        },
+    };
 }, (mode) => mode === 'ble');
 // 单次连接内最多打印多少条原始收发日志（避免拖慢主线程、掩盖丢字节）
 const MAX_VERBOSE_LOGS = 60;
@@ -148,12 +213,19 @@ export class BleSerialPort {
         this._device = device;
         this._writeChar = writeChar;
         this._notifyChar = notifyChar;
+        // 若浏览器已实现 maxWriteWithoutResponseSize（Chromium 推进中），
+        // 直接取真实单包上限，避免向设备发送超长包（部分平台会静默截断而非报错）。
+        const rawMaxPayload = Number(writeChar && writeChar.maxWriteWithoutResponseSize);
+        this._maxPayload =
+            Number.isFinite(rawMaxPayload) && rawMaxPayload > 0
+                ? Math.floor(rawMaxPayload)
+                : null;
         const chunkSetting = options.chunkSize || getBleChunkSetting();
         this._autoMode = chunkSetting === BLE_CHUNK_AUTO;
-        this._chunkLadder = buildChunkLadder(chunkSetting);
+        this._chunkLadder = buildChunkLadder(chunkSetting, this._maxPayload);
         this._chunkIndex = 0;
         this._chunkSize = this._chunkLadder[0];
-        updateChunkStatus(this._chunkSize);
+        updateChunkStatus(this._chunkSize, false);
         // chip 为字符串会让 serial.js 走“整帧单次写出”路径；
         // 实际的分片交给本模块的 writable 处理。
         this.chip = options.chip || 'BLE-NUS';
@@ -196,7 +268,8 @@ export class BleSerialPort {
 
         logWebUsb(
             `BLE open: ${this._device.name || '(未命名)'} chunk=${this._chunkSize} ` +
-            `writeWithoutResponse=${this._useWriteWithoutResponse}`
+            `writeWithoutResponse=${this._useWriteWithoutResponse} ` +
+            `maxWriteWithoutResponseSize=${this._maxPayload ?? 'n/a'}`
         );
     }
 
@@ -250,19 +323,22 @@ export class BleSerialPort {
                     // "GATT operation already in progress"，并把该特征卡死，导致
                     // 之后所有写出都失败。因此必须 await 每一片；控制器自身会在
                     // 一个连接事件里打包多个 ATT 包，不需要 JS 层并发。
-                    // 失败则按档位降级（512→256→…→20）后从同一 offset 重试
+                    // 失败则按档位降级（509→256→…→20）后从同一 offset 重试
                     //（写操作是原子的，原地重试不会重复字节）。
                     let offset = 0;
                     while (offset < data.length) {
                         if (!this._opened) throw new Error('BLE 已断开');
                         const size = Math.min(this._chunkSize, data.length - offset);
                         const slice = data.subarray(offset, offset + size);
-                        this._logTx(slice);
                         try {
                             await this._writeChunk(slice);
-                            // “自动”模式记住已确认可用的整档分片，重连时直接复用。
-                            if (this._autoMode && size === this._chunkSize) {
-                                autoChunkHint = this._chunkSize;
+                            // 写出成功后才计日志：降级重试时同一片会被重发，
+                            // 若失败前就计数会重复打印并快速耗尽 verbose 预算。
+                            this._logTx(slice);
+                            if (size === this._chunkSize) {
+                                updateChunkStatus(this._chunkSize, true);
+                                // “自动”模式记住已确认可用的整档分片，重连时直接复用。
+                                if (this._autoMode) autoChunkHint = this._chunkSize;
                             }
                             offset += size;
                         } catch (error) {
@@ -322,7 +398,7 @@ export class BleSerialPort {
         }
     }
 
-    /** 记录一次发出的分片（受 MAX_VERBOSE_LOGS / verbose 开关限制，避免拖慢主线程）。 */
+    /** 记录一次成功写出的分片（受 MAX_VERBOSE_LOGS / verbose 开关限制，避免拖慢主线程）。 */
     _logTx(slice) {
         this._txCount += 1;
         if (this._txCount <= MAX_VERBOSE_LOGS || isDebugVerbose()) {
@@ -338,7 +414,7 @@ export class BleSerialPort {
         if (this._chunkIndex >= this._chunkLadder.length - 1) return false;
         this._chunkIndex += 1;
         this._chunkSize = this._chunkLadder[this._chunkIndex];
-        updateChunkStatus(this._chunkSize);
+        updateChunkStatus(this._chunkSize, false);
         logWebUsb(
             `BLE 写入 ${size}B 失败(${error?.name || error})，降为 ${this._chunkSize}B 重试`
         );
@@ -394,32 +470,43 @@ export class BleSerialPort {
      * @returns {Promise<boolean>} 是否完成了配置
      */
     async configureBridge(baudRate) {
-        if (!(await this.waitForBridgeFrame(BRIDGE_READY_TIMEOUT))) {
+        let sawBridgeFrame = await this.waitForBridgeFrame(BRIDGE_READY_TIMEOUT);
+        if (!sawBridgeFrame) {
             // 未见 READY，主动探测一次（部分固件需收到命令才回包）
             try {
                 await this.sendBridgeCommand('STATUS');
             } catch {}
-            if (!(await this.waitForBridgeFrame(BRIDGE_PROBE_TIMEOUT))) {
-                logWebUsb('BLE 未检测到桥接器控制帧，按普通 NUS 透传处理');
-                return false;
-            }
+            sawBridgeFrame = await this.waitForBridgeFrame(BRIDGE_PROBE_TIMEOUT);
         }
-        await this.sendBridgeCommand(`BAUD=${baudRate}`);
-        await sleep(BRIDGE_CFG_SETTLE);
+        if (!sawBridgeFrame) {
+            logWebUsb('BLE 未检测到桥接器控制帧，按普通 NUS 透传处理');
+            return false;
+        }
         try {
+            await this.sendBridgeCommand(`BAUD=${baudRate}`);
+            await sleep(BRIDGE_CFG_SETTLE);
             await this.sendBridgeCommand('FLUSH');
             await sleep(BRIDGE_CFG_SETTLE);
-        } catch {}
-        logWebUsb(`BLE 桥接器 UART 波特率已设为 ${baudRate}`);
-        // 握手期间的 READY / OK BAUD / OK FLUSH 状态帧仍留在接收队列里
-        // （hasBridgeFrame 只查看不取走）。此时电台尚未开始通信，且固件端
-        // FLUSH 已 reset 了 uart2ble 缓冲，队列里只可能是桥接器状态帧，
-        // 直接清空，避免它们泄漏进后续的 K5 数据流被 readPacket 当数据读出。
-        if (this._rxQueue.length) {
-            logWebUsb(`BLE 清空握手残留帧 ${this._rxQueue.length} 条`);
-            this._rxQueue = [];
+            logWebUsb(`BLE 桥接器 UART 波特率已设为 ${baudRate}`);
+        } catch (error) {
+            // 配置失败不阻断连接：上层（requestBleSerialPort）会记录并继续。
+            logWebUsb(
+                `BLE 桥接器配置失败（继续尝试）: ${error?.name || ''} ${error?.message || error}`
+            );
         }
+        this._clearBridgeResidue();
         return true;
+    }
+
+    /**
+     * 清空握手期间残留的桥接器状态帧（READY / OK BAUD / OK FLUSH 等）。
+     * hasBridgeFrame 只查看不取走，若不清理，这些帧会被后续 readPacket 当数据读出。
+     * 仅在确认对端是桥接器（看到过魔术帧）后调用，避免误删普通 NUS 设备的真实数据。
+     */
+    _clearBridgeResidue() {
+        if (!this._rxQueue.length) return;
+        logWebUsb(`BLE 清空握手残留帧 ${this._rxQueue.length} 条`);
+        this._rxQueue = [];
     }
 
     _resolveWaiter() {
