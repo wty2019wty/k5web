@@ -69,6 +69,15 @@ function buildChunkLadder(setting) {
 
 // 把「写分片」选择器挂到串口日志浮层的工具栏，连接前即可快速切换（下次连接生效）。
 // 仅在 BLE 传输模式下显示，Web Serial / WebUSB 时隐藏。
+let chunkStatusEl = null; // 工具栏上显示“本次连接实际生效分片”的节点
+let lastEffectiveChunk = null; // 最近一次生效的分片，浮层重建后用于回填
+function updateChunkStatus(size) {
+    lastEffectiveChunk = size || null;
+    if (!chunkStatusEl) return;
+    try {
+        chunkStatusEl.textContent = size ? `生效 ${size}B` : '';
+    } catch {}
+}
 addDebugControl(() => {
     if (typeof document === 'undefined') return null;
     const wrap = document.createElement('label');
@@ -96,6 +105,12 @@ addDebugControl(() => {
         );
     };
     wrap.appendChild(select);
+    // 本次连接实际生效的分片（连接时和降级时更新）。
+    const status = document.createElement('span');
+    status.style.cssText = 'opacity:.85';
+    status.textContent = lastEffectiveChunk ? `生效 ${lastEffectiveChunk}B` : '';
+    wrap.appendChild(status);
+    chunkStatusEl = status;
     return wrap;
 }, (mode) => mode === 'ble');
 // 单次连接内最多打印多少条原始收发日志（避免拖慢主线程、掩盖丢字节）
@@ -138,6 +153,7 @@ export class BleSerialPort {
         this._chunkLadder = buildChunkLadder(chunkSetting);
         this._chunkIndex = 0;
         this._chunkSize = this._chunkLadder[0];
+        updateChunkStatus(this._chunkSize);
         // chip 为字符串会让 serial.js 走“整帧单次写出”路径；
         // 实际的分片交给本模块的 writable 处理。
         this.chip = options.chip || 'BLE-NUS';
@@ -250,6 +266,7 @@ export class BleSerialPort {
                             if (this._chunkIndex < this._chunkLadder.length - 1) {
                                 this._chunkIndex += 1;
                                 this._chunkSize = this._chunkLadder[this._chunkIndex];
+                                updateChunkStatus(this._chunkSize);
                                 logWebUsb(
                                     `BLE 写入 ${size}B 失败(${error?.name || error})，降为 ${this._chunkSize}B 重试`
                                 );
