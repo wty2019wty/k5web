@@ -32,11 +32,6 @@ const CHUNK_STORAGE_KEY = 'k5web.bleChunkSize';
 // 本次会话内“自动”模式已确认可用的最大分片：重连时直接用它，省去再次降级。
 let autoChunkHint = null;
 
-// “在途”写包数（仅无响应写生效）。一次 BLE 连接事件可携带多个 ATT 包；
-// 逐个 await 会把它们拆散到多个连接事件，白白拉低吞吐、放大延迟。
-// 但堆太多会超出控制器/桥接器缓冲（日志里 DROP 增长），4 是较稳妥的折中。
-const BLE_WRITE_PIPELINE = 4;
-
 /** 读取用户选择的 BLE 写分片档位（localStorage 持久化；默认 auto）。 */
 export function getBleChunkSetting() {
     try {
@@ -176,12 +171,6 @@ export class BleSerialPort {
         // NUS 写特征是否支持“无响应写”（吞吐更好）；否则退化为“有响应写”。
         const props = writeChar && writeChar.properties;
         this._useWriteWithoutResponse = !props || props.writeWithoutResponse === true;
-        // 无响应写才允许“在途多包”；有响应写必须严格串行，否则 Chrome 会报
-        // "GATT operation already in progress"。
-        this._pipelineDepth = this._useWriteWithoutResponse ? BLE_WRITE_PIPELINE : 1;
-        // 当前分片是否已用单包“试发”确认为可用负载（= 协商 MTU - 3）。
-        // 先用单包证明成功，再流水线，可避免大分片整批失败。
-        this._provenChunk = false;
 
         this._onNotify = (event) => {
             const dv = event.target.value;
@@ -255,42 +244,25 @@ export class BleSerialPort {
                     const data = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk);
                     if (!data.length) return;
 
-                    // 统一发送循环：
-                    //  - 只有“整档分片”(size === 分片档位) 才作为“该档可用”的证明，
-                    //    也才有流水线价值；尾包/小包不参与证明。
-                    //  - 该档已证明 + 无响应写 → 流水线批量在途（一次连接事件多包）。
-                    //  - 未证明 → 单包串行试发；失败则按档位降级（512→256→…→20）后
-                    //    从同一 offset 重试（写操作原子，原地重试不会重复字节）。
+                    // 逐片串行发送。
+                    // 注意：Web Bluetooth 不允许并发 GATT 操作——若在上一片
+                    // writeValueWithoutResponse 尚未返回前再发一片，Chrome 会抛
+                    // "GATT operation already in progress"，并把该特征卡死，导致
+                    // 之后所有写出都失败。因此必须 await 每一片；控制器自身会在
+                    // 一个连接事件里打包多个 ATT 包，不需要 JS 层并发。
+                    // 失败则按档位降级（512→256→…→20）后从同一 offset 重试
+                    //（写操作是原子的，原地重试不会重复字节）。
                     let offset = 0;
                     while (offset < data.length) {
                         if (!this._opened) throw new Error('BLE 已断开');
                         const size = Math.min(this._chunkSize, data.length - offset);
-                        const isFullChunk = size === this._chunkSize;
-
-                        if (isFullChunk && this._provenChunk) {
-                            const inflight = [];
-                            while (inflight.length < this._pipelineDepth && offset < data.length) {
-                                const s = Math.min(this._chunkSize, data.length - offset);
-                                const slice = data.subarray(offset, offset + s);
-                                this._logTx(slice);
-                                inflight.push(this._writeChunk(slice));
-                                offset += s;
-                            }
-                            // 分片大小已证明可用却仍失败，多半是链路异常（断开/占满）：
-                            // 直接抛错，绝不重发整窗，避免重复字节污染 0xABCD 协议帧。
-                            await Promise.all(inflight);
-                            continue;
-                        }
-
                         const slice = data.subarray(offset, offset + size);
                         this._logTx(slice);
                         try {
                             await this._writeChunk(slice);
-                            if (isFullChunk && this._useWriteWithoutResponse) {
-                                // 只有成功发过一整档分片，才认为该档可用并允许流水线。
-                                this._provenChunk = true;
-                                // “自动”模式记住已确认可用的整档分片，重连时直接复用。
-                                if (this._autoMode) autoChunkHint = this._chunkSize;
+                            // “自动”模式记住已确认可用的整档分片，重连时直接复用。
+                            if (this._autoMode && size === this._chunkSize) {
+                                autoChunkHint = this._chunkSize;
                             }
                             offset += size;
                         } catch (error) {
@@ -359,14 +331,13 @@ export class BleSerialPort {
     }
 
     /**
-     * 写入失败后按档位降一级并标记需重新“试发”。
+     * 写入失败后按档位降一级。
      * @returns {boolean} true=已降级（调用方应从同一 offset 重试）；false=已到最小档
      */
     _downgradeChunk(error, size) {
         if (this._chunkIndex >= this._chunkLadder.length - 1) return false;
         this._chunkIndex += 1;
         this._chunkSize = this._chunkLadder[this._chunkIndex];
-        this._provenChunk = false;
         updateChunkStatus(this._chunkSize);
         logWebUsb(
             `BLE 写入 ${size}B 失败(${error?.name || error})，降为 ${this._chunkSize}B 重试`
@@ -440,6 +411,14 @@ export class BleSerialPort {
             await sleep(BRIDGE_CFG_SETTLE);
         } catch {}
         logWebUsb(`BLE 桥接器 UART 波特率已设为 ${baudRate}`);
+        // 握手期间的 READY / OK BAUD / OK FLUSH 状态帧仍留在接收队列里
+        // （hasBridgeFrame 只查看不取走）。此时电台尚未开始通信，且固件端
+        // FLUSH 已 reset 了 uart2ble 缓冲，队列里只可能是桥接器状态帧，
+        // 直接清空，避免它们泄漏进后续的 K5 数据流被 readPacket 当数据读出。
+        if (this._rxQueue.length) {
+            logWebUsb(`BLE 清空握手残留帧 ${this._rxQueue.length} 条`);
+            this._rxQueue = [];
+        }
         return true;
     }
 
