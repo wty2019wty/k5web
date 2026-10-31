@@ -3,7 +3,6 @@
  */
 
 import { ctrlIn, ctrlOut } from './transport.js';
-import { logWebUsb } from '../serial-log.js';
 
 const CH341 = {
   REQ_READ_VERSION: 0x5f,
@@ -132,12 +131,10 @@ const ch341 = {
     );
 
     // 读一下 Modem 状态寄存器做连通性检查，但只是诊断用途：部分克隆芯片不支持该
-    // 读数（stall），不应因此让整次连接失败。
+    // 读数（stall），不应因此让整次连接失败。失败详情 transport.ctrlIn 已经记过日志。
     try {
       await ctrlIn(device, CH341.REQ_READ_REG, 0x0706, 0, 2);
-    } catch (e) {
-      logWebUsb(`读 MSR 失败（忽略）: ${e && e.message}`);
-    }
+    } catch {}
 
     return { version };
   },
