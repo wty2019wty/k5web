@@ -4,10 +4,15 @@ import type { NotificationReturn } from '@arco-design/web-vue/es/notification/in
 import type { RouteRecordNormalized } from 'vue-router';
 import defaultSettings from '@/config/settings.json';
 import { getMenuList } from '@/api/user';
+import { getBleChunkSetting, setBleChunkSetting } from '@/utils/ble-serial/index.js';
 import { AppState } from './types';
 
 const useAppStore = defineStore('app', {
-  state: (): AppState => ({ ...defaultSettings }),
+  state: (): AppState => ({
+    ...defaultSettings,
+    // 覆盖为持久化的 BLE 分片档位
+    bleChunkSize: getBleChunkSetting(),
+  }),
 
   getters: {
     appCurrentSetting(state: AppState): AppState {
@@ -29,6 +34,10 @@ const useAppStore = defineStore('app', {
     updateSettings(partial: Partial<AppState>) {
       // @ts-ignore-next-line
       this.$patch(partial);
+      // BLE 分片档位需要跨刷新持久化
+      if ('bleChunkSize' in partial) {
+        setBleChunkSetting(partial.bleChunkSize);
+      }
     },
 
     // Change theme color

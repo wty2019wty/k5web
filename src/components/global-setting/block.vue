@@ -7,6 +7,7 @@
         :type="option.type || 'switch'"
         :name="option.key"
         :default-value="option.defaultVal"
+        :options="option.options || []"
         @input-change="handleChange"
       />
     </div>
@@ -23,6 +24,7 @@
     key: string;
     type?: string;
     defaultVal?: boolean | string | number;
+    options?: { label: string; value: string | number }[];
   }
   defineProps({
     title: {

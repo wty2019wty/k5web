@@ -6,6 +6,21 @@
     :default-value="(defaultValue as number)"
     @change="handleChange"
   />
+  <a-select
+    v-else-if="type === 'select'"
+    :style="{ width: '120px' }"
+    size="small"
+    :model-value="defaultValue"
+    @change="handleChange"
+  >
+    <a-option
+      v-for="opt in options"
+      :key="String(opt.value)"
+      :value="opt.value"
+    >
+      {{ opt.label }}
+    </a-option>
+  </a-select>
   <a-switch
     v-else
     :default-checked="(defaultValue as boolean)"
@@ -15,6 +30,8 @@
 </template>
 
 <script lang="ts" setup>
+  import { PropType } from 'vue';
+
   const props = defineProps({
     type: {
       type: String,
@@ -27,6 +44,10 @@
     defaultValue: {
       type: [String, Boolean, Number],
       default: '',
+    },
+    options: {
+      type: Array as PropType<{ label: string; value: string | number }[]>,
+      default: () => [],
     },
   });
   const emit = defineEmits(['inputChange']);

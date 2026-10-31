@@ -17,5 +17,6 @@
   "connectState": false,
   "firmwareVersion": "",
   "connectPort": null,
-  "configuration": null
+  "configuration": null,
+  "bleChunkSize": "auto"
 }
