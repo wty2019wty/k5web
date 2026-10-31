@@ -490,8 +490,8 @@ async function ch341Configure(baudRate) {
   setStep('init', 'done');
 
   // baud + lcr
-  let val = ch341GetDivisor(baudRate, false);
-  if (state.version > 0x27) val |= 1 << 7; // flush 32-byte buffer
+  // 无条件置位 bit 7（关闭“攒满 32 字节才上报”的 FIFO 行为），与可正常工作的实现一致。
+  let val = ch341GetDivisor(baudRate, false) | (1 << 7);
   await ctrlOut(dev, CH341.REQ_WRITE_REG, (CH341.REG_DIVISOR << 8) | CH341.REG_PRESCALER, val);
   if (state.version >= 0x30) {
     await ctrlOut(dev, CH341.REQ_WRITE_REG, (CH341.REG_LCR2 << 8) | CH341.REG_LCR, lcr8n1());
@@ -499,19 +499,23 @@ async function ch341Configure(baudRate) {
   log(`baud ${baudRate} → divisor word 0x${val.toString(16)}`, 'info');
   setStep('baud', 'done');
 
-  // handshake DTR|RTS, value = ~mcr
+  // handshake DTR|RTS, value = ~mcr（与 Linux 一致，保留高字节 0xff）
   state.mcr = CH341.BIT_DTR | CH341.BIT_RTS;
-  await ctrlOut(dev, CH341.REQ_MODEM_CTRL, (~state.mcr) & 0xff, 0);
+  await ctrlOut(dev, CH341.REQ_MODEM_CTRL, (~state.mcr) & 0xffff, 0);
   setStep('handshake', 'done');
 
   // flow control none
   await ctrlOut(dev, CH341.REQ_WRITE_REG, (CH341.REG_FLOW_CTL << 8) | CH341.REG_FLOW_CTL, 0x0000);
   setStep('flow', 'done');
 
-  // smoke status
-  const st = await ctrlIn(dev, CH341.REQ_READ_REG, 0x0706, 0, 2);
-  state.msr = (~st[0]) & CH341.BITS_MODEM_STAT;
-  log(`MSR raw=${hex(st)} → CTS=${!!(state.msr & CH341.BIT_CTS)} DSR=${!!(state.msr & CH341.BIT_DSR)} DCD=${!!(state.msr & CH341.BIT_DCD)}`, 'info');
+  // smoke status（仅诊断，失败不应影响连接）
+  try {
+    const st = await ctrlIn(dev, CH341.REQ_READ_REG, 0x0706, 0, 2);
+    state.msr = (~st[0]) & CH341.BITS_MODEM_STAT;
+    log(`MSR raw=${hex(st)} → CTS=${!!(state.msr & CH341.BIT_CTS)} DSR=${!!(state.msr & CH341.BIT_DSR)} DCD=${!!(state.msr & CH341.BIT_DCD)}`, 'info');
+  } catch (e) {
+    log(`读 MSR 失败（忽略）: ${e.message || e}`, 'warn');
+  }
 }
 
 function makeStreams() {
@@ -546,6 +550,16 @@ function makeStreams() {
         if (res.status !== 'ok') throw new Error(`transferOut ${res.status}`);
         offset += slice.length;
       }
+      // 满包结尾需要 ZLP 收尾，否则最后一段会留在 CH340 缓冲里。
+      if (data.length > 0 && data.length % size === 0) {
+        let zlp = null;
+        try {
+          zlp = await state.device.transferOut(state.epOut, new Uint8Array(0));
+        } catch (e) {
+          log(`ZLP 被浏览器拒绝（忽略）: ${e.message || e}`, 'warn');
+        }
+        if (zlp && zlp.status !== 'ok') throw new Error(`transferOut ZLP ${zlp.status}`);
+      }
     },
     close() {},
     abort() {}
@@ -558,14 +572,29 @@ async function readLoop() {
   state.readLoopRunning = true;
   const dev = state.device;
   const assemble = makePacketAssembler(describeK5Packet);
+  let stallRetries = 0;
   while (state.connected && dev.opened) {
     try {
       const res = await dev.transferIn(state.epIn, state.epInSize);
       if (!state.connected) break;
-      if (res.status !== 'ok') {
-        log(`bulk IN status=${res.status}`, 'warn');
+      if (res.status === 'stall') {
+        // endpoint halt：必须 clearHalt 才能继续，否则会变成忙等死循环。
+        log(`bulk IN stall，clearHalt`, 'warn');
+        try {
+          await dev.clearHalt('in', state.epIn);
+        } catch (e) {
+          log(`clearHalt 失败: ${e.message || e}`, 'err');
+          break;
+        }
+        if (++stallRetries > 8) break;
         continue;
       }
+      if (res.status !== 'ok') {
+        log(`bulk IN status=${res.status}`, 'warn');
+        if (++stallRetries > 8) break;
+        continue;
+      }
+      stallRetries = 0;
       if (res.data && res.data.byteLength) {
         const bytes = new Uint8Array(res.data.buffer, res.data.byteOffset, res.data.byteLength);
         log(`RX ${bytes.length}B: ${hex(bytes)}`, 'ok');
@@ -580,6 +609,10 @@ async function readLoop() {
       if (state.connected) log(`bulk IN error: ${e.message || e}`, 'err');
       break;
     }
+  }
+  if (state.connected) {
+    state.connected = false;
+    log('读循环已停止（设备掉线或端点不可用），请重新连接', 'warn');
   }
   state.readLoopRunning = false;
   try { state._readController.close(); } catch {}
@@ -806,7 +839,7 @@ async function disconnect() {
   const dev = state.device;
   try {
     if (dev && dev.opened) {
-      try { await ctrlOut(dev, CH341.REQ_MODEM_CTRL, (~0) & 0xff, 0); } catch {}
+      try { await ctrlOut(dev, CH341.REQ_MODEM_CTRL, 0xffff, 0); } catch {}
       try { await dev.releaseInterface(state.iface); } catch {}
       try { await dev.close(); } catch {}
     }

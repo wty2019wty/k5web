@@ -855,15 +855,42 @@ function globalRelease(target = 'all'){
     } catch {}
 }
 
+// WebUSB CH340/CH341 直连路径（安卓 Chrome）。
+// 失败时返回 null；用户取消选择设备（NotFoundError）时静默，与桌面行为一致。
+async function connectWebUsb(baudRate) {
+    try {
+        setDebugTransport('webusb');
+        return await requestWebUsbCh341Port(baudRate);
+    } catch (error) {
+        logWebUsb(`WebUSB CH341 connect failed: ${error?.name || ''} ${error?.message || error}`);
+        console.error('WebUSB CH341 connect failed:', error);
+        if (error?.name !== 'NotFoundError') {
+            alert(String(error && error.message ? error.message : error));
+        }
+        return null;
+    }
+}
+
 async function connect() {
     const baudRate = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 38400;
     const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
 
-    // Desktop prefers Web Serial; Android may fall through to WebUSB below.
     setDebugTransport(isAndroid ? 'webusb' : ('serial' in navigator ? 'webserial' : 'webusb'));
     logWebUsb(`connect() baud=${baudRate} android=${isAndroid} webSerial=${'serial' in navigator} webUsb=${hasWebUsbSupport()}`);
 
-    // 1) Native Web Serial (desktop Chrome/Edge; rare on Android)
+    // 安卓 Chrome 148+ 也暴露了 navigator.serial，但它无法驱动 CH340 这类厂商自定义
+    // 设备（内核没有对应的串口驱动，Chrome 也不会写 CH341 的波特率寄存器）：
+    //   · requestPort() 可能直接抛 NotFoundError（列表里没有 CH340）；
+    //   · 也可能返回一个能 open 但收不到任何数据的“假端口”，之后的握手全部超时；
+    //   · 即使失败回退，之前的串口选择框已经消耗了用户手势，requestDevice() 会抛
+    //     SecurityError: Must be handling a user gesture to show a permission request.
+    // 所以在安卓上只要浏览器提供 WebUSB，就直接走 WebUSB，绝不先碰原生 Web Serial。
+    // 只有连 navigator.usb 都没有时，才退回下面的 Web Serial 分支（此时也没有别的选择）。
+    if (isAndroid && hasWebUsbSupport()) {
+        return await connectWebUsb(baudRate);
+    }
+
+    // 1) 桌面：原生 Web Serial 优先
     if ('serial' in navigator) {
         let port = undefined
         try {
@@ -872,11 +899,7 @@ async function connect() {
         } catch(error) {
             logWebUsb(`requestPort 失败: ${error?.name || ''} ${error?.message || error}`);
             console.log('Web Serial requestPort: ' + error)
-            // Desktop: user cancelled or none selected — stop here.
-            // Android: serial often lists no USB device, fall through to WebUSB.
-            if (!isAndroid) {
-                return null;
-            }
+            return null;
         }
         if (port) {
             try {
@@ -892,30 +915,15 @@ async function connect() {
                 }
                 logWebUsb(`port.open 失败: ${error?.name || ''} ${error?.message || error}`);
                 console.error('Error connecting to the serial port:', error);
-                // Close so the interface is free for WebUSB on Android.
                 try { await port.close(); } catch {}
-                if (!isAndroid) {
-                    return null;
-                }
-                // Android: CH340 often appears in Web Serial but open fails — fall through to WebUSB.
+                return null;
             }
         }
     }
 
-    // 2) WebUSB CH340/CH341 fallback (Android Chrome) — EXPERIMENTAL, see README
+    // 2) 非安卓兜底：WebUSB CH340/CH341
     if (hasWebUsbSupport()) {
-        try {
-            setDebugTransport('webusb');
-            return await requestWebUsbCh341Port(baudRate);
-        } catch (error) {
-            logWebUsb(`WebUSB CH341 connect failed: ${error?.name || ''} ${error?.message || error}`);
-            console.error('WebUSB CH341 connect failed:', error);
-            // 用户取消选择设备（NotFoundError）时静默返回，与桌面 Web Serial 行为一致
-            if (error?.name !== 'NotFoundError') {
-                alert(String(error && error.message ? error.message : error));
-            }
-            return null;
-        }
+        return await connectWebUsb(baudRate);
     }
 
     // Single alert owned here; navbar must not also alert when connect() returns null.

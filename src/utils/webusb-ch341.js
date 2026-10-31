@@ -1,11 +1,15 @@
 /**
  * CH340/CH341 WebUSB serial port, ported from linux drivers/usb/serial/ch341.c.
  * Exposes a SerialPort-compatible surface so src/utils/serial.js can use it
- * on Android Chrome where native Web Serial does not list USB devices.
+ * on Android Chrome.
+ *
+ * 安卓策略：只要浏览器提供 WebUSB，就一律直接走这里，不再先尝试原生 Web Serial
+ * （安卓上 Web Serial 驱动不了 CH340，而且先弹出串口选择框会消耗 user gesture，
+ * 导致随后的 requestDevice() 抛 SecurityError）。桌面仍优先原生 Web Serial。
+ * 详见 README「安卓 WebUSB（实验性）」。
  *
  * EXPERIMENTAL: Android WebUSB path. Not all phones/ROMs can claim CH340
- * (kernel ch341 may already own the interface). Prefer native Web Serial
- * when available. See README「平台支持」.
+ * (kernel ch341 may already own the interface). See README「平台支持」.
  */
 
 import { logWebUsb, fmtHex } from './serial-log.js';
@@ -29,6 +33,11 @@ const CH341 = {
   BITS_MODEM_STAT: 0x0f,
   CLKRATE: 48000000,
 };
+
+// divisor 寄存器 bit 7：关闭 CH340/CH341 内部“攒满一个端点包才转发”的行为。
+// Linux ch341.c 只在 version > 0x27 时置位，并注明“至少有一个 0x27 设备这个位是反的”。
+// 这里按实测可用的实现无条件置位；若遇到 0x27 设备握手仍然超时，先排查这一位。
+const DIVISOR_DISABLE_PACKET_BUFFERING = 1 << 7;
 
 const SUPPORTED_USB = [
   { vendorId: 0x1a86, productId: 0x7523 },
@@ -165,8 +174,14 @@ async function ch341Configure(dev, baudRate) {
   await ctrlOut(dev, CH341.REQ_SERIAL_INIT, 0, 0);
 
   let val = ch341GetDivisor(baudRate);
-  // version > 0x27: flush partial 32-byte endpoint buffer
-  if (version > 0x27) val |= 1 << 7;
+  // 对齐实测可用的实现（以及 uvstudio 已验证的版本）：无条件置位 bit 7。
+  // 该位用于关闭 CH340/CH341 内部“攒满一个端点包才转发”的行为；不置位时短包
+  // （K5 握手报文只有 20 多字节）可能一直卡在芯片里，读侧永远超时。
+  //
+  // 注意与 Linux 的差异：ch341.c 写的是 `if (version > 0x27) val |= BIT(7);`，
+  // 并注明“至少有一个 version 0x27 的设备这个位是反的”。常见 CH340 上报的正是
+  // 0x27，所以这里不再按版本号判断；如果遇到 0x27 设备握手仍然超时，先检查这一位。
+  val |= DIVISOR_DISABLE_PACKET_BUFFERING;
   await ctrlOut(
     dev,
     CH341.REQ_WRITE_REG,
@@ -183,7 +198,9 @@ async function ch341Configure(dev, baudRate) {
   }
 
   const mcr = CH341.BIT_DTR | CH341.BIT_RTS;
-  await ctrlOut(dev, CH341.REQ_MODEM_CTRL, ~mcr & 0xff, 0);
+  // Linux 传的是 u8 取反后的 wValue（0xff9f），高字节也保持一致，避免某些克隆芯片
+  // 把高位当成有效状态位。
+  await ctrlOut(dev, CH341.REQ_MODEM_CTRL, ~mcr & 0xffff, 0);
   await ctrlOut(
     dev,
     CH341.REQ_WRITE_REG,
@@ -191,8 +208,13 @@ async function ch341Configure(dev, baudRate) {
     0x0000
   );
 
-  // smoke-test modem status register
-  await ctrlIn(dev, CH341.REQ_READ_REG, 0x0706, 0, 2);
+  // 读一下 Modem 状态寄存器做连通性检查，但只是诊断用途：部分克隆芯片不支持该
+  // 读数（stall），不应因此让整次连接失败。
+  try {
+    await ctrlIn(dev, CH341.REQ_READ_REG, 0x0706, 0, 2);
+  } catch (e) {
+    logWebUsb(`读 MSR 失败（忽略）: ${e && e.message}`);
+  }
 
   return version;
 }
@@ -210,10 +232,15 @@ class WebUsbCh341Port {
     this._rxQueue = [];
     this._rxWaiter = null;
     this._readable = null;
+    this._readController = null;
     this._writable = null;
     this._controlChain = Promise.resolve();
     this._transferInCount = 0;
     this._transferOutCount = 0;
+    // 读循环异常退出（设备掉线、端点反复 stall）后置位：后续 readable 直接返回 null，
+    // 让上层立刻失败，而不是每次读都等满超时。
+    this._readFailed = false;
+    this._readError = null;
     this.chip = 'CH341';
     logWebUsb(`open: CH341 version=0x${version.toString(16)} iface=${eps.ifaceNum} epIn=${eps.epIn} epOut=${eps.epOut}`);
     this._readLoop();
@@ -224,9 +251,12 @@ class WebUsbCh341Port {
   }
 
   get readable() {
-    if (!this._opened) return null;
+    if (!this._opened || this._readFailed) return null;
     if (!this._readable) {
       this._readable = new ReadableStream({
+        start: (controller) => {
+          this._readController = controller;
+        },
         pull: (controller) => {
           if (this._rxQueue.length) {
             controller.enqueue(this._rxQueue.shift());
@@ -237,11 +267,13 @@ class WebUsbCh341Port {
           });
         },
         cancel: () => {
-          this._rxQueue = [];
+          // 不要清空 _rxQueue：队列里的字节还没交给上层 reader，丢掉会让下一次读取
+          // 从半帧中间开始（K5 协议会因此错位）。只唤醒挂起的 pull。
           if (this._rxWaiter) {
             this._rxWaiter.resolve();
             this._rxWaiter = null;
           }
+          this._readController = null;
           this._readable = null;
         },
       });
@@ -271,9 +303,19 @@ class WebUsbCh341Port {
           // Full-size final bulk packet stays buffered on CH340 until a short/ZLP arrives.
           if (data.length > 0 && data.length % this._epOutSize === 0) {
             this._transferOutCount += 1;
-            const zlp = await this._device.transferOut(this._epOut, new Uint8Array(0));
-            if (zlp.status !== 'ok') {
-              logWebUsb(`transferOut#${this._transferOutCount} ZLP failed status=${zlp.status}`);
+            let zlp = null;
+            try {
+              zlp = await this._device.transferOut(this._epOut, new Uint8Array(0));
+            } catch (e) {
+              // 某些 Chrome 版本直接拒绝空 transferOut（抛 TypeError/NotSupportedError）。
+              // 这是 API 限制而不是 USB 传输失败，数据已经写出去了，不能因此判整帧失败。
+              logWebUsb(`transferOut#${this._transferOutCount} ZLP 被拒绝（忽略）: ${e && e.message}`);
+              console.warn('WebUSB ZLP rejected by browser; tail may stay buffered:', e);
+            }
+            // 真正发起了传输却返回非 ok，说明 USB 层失败：最后一段数据很可能仍留在
+            // 芯片缓冲里。必须抛错，否则上层只会在等 ACK 时超时，看不到根因。
+            if (zlp && zlp.status !== 'ok') {
+              logWebUsb(`transferOut#${this._transferOutCount} ZLP 失败 status=${zlp.status}`);
               throw new Error(`USB bulk OUT ZLP failed: ${zlp.status}`);
             }
           }
@@ -296,7 +338,7 @@ class WebUsbCh341Port {
       const mcr =
         (signals.dataTerminalReady ? CH341.BIT_DTR : 0) |
         (signals.requestToSend ? CH341.BIT_RTS : 0);
-      await ctrlOut(this._device, CH341.REQ_MODEM_CTRL, ~mcr & 0xff, 0);
+      await ctrlOut(this._device, CH341.REQ_MODEM_CTRL, ~mcr & 0xffff, 0);
     });
   }
 
@@ -324,6 +366,7 @@ class WebUsbCh341Port {
         } catch {}
         this._readable = null;
       }
+      this._readController = null;
       if (this._writable) {
         try {
           await this._writable.abort();
@@ -331,7 +374,7 @@ class WebUsbCh341Port {
         this._writable = null;
       }
       try {
-        await ctrlOut(this._device, CH341.REQ_MODEM_CTRL, 0xff, 0);
+        await ctrlOut(this._device, CH341.REQ_MODEM_CTRL, 0xffff, 0);
       } catch {}
       try {
         await this._device.releaseInterface(this._iface);
@@ -364,17 +407,61 @@ class WebUsbCh341Port {
     this._rxQueue.push(bytes);
   }
 
+  // 读循环意外停止时调用：标记端口不可再读，并让当前挂起的 read() 立刻以错误结束。
+  // 注意不能把 _opened 置 false，否则 serial.js 的 disconnect() 会因为
+  // (port.readable || port.connected) 为假而跳过 close()，留下未释放的 USB 设备。
+  _markReadFailed(error) {
+    if (this._readFailed) return;
+    this._readFailed = true;
+    this._readError = error;
+    logWebUsb(`读循环已终止: ${error && error.message}`);
+    console.warn('WebUSB read loop stopped:', error);
+    // 直接把流置为 errored，这样即使当前没有挂起的 read()，下一次 read() 也会立即失败。
+    if (this._readController) {
+      try { this._readController.error(error); } catch {}
+    }
+    if (this._rxWaiter) {
+      const { resolve } = this._rxWaiter;
+      this._rxWaiter = null;
+      try { resolve(); } catch {}
+    }
+  }
+
   async _readLoop() {
     logWebUsb('读循环已启动');
+    let stallRetries = 0;
     while (this._opened && this._device.opened) {
       try {
         const res = await this._device.transferIn(this._epIn, this._epInSize);
         if (!this._opened) break;
         this._transferInCount += 1;
-        if (res.status !== 'ok') {
-          logWebUsb(`transferIn#${this._transferInCount} status=${res.status}`);
+        if (res.status === 'stall') {
+          // endpoint halt：必须 clearHalt 才能继续，否则这里会变成忙等死循环。
+          logWebUsb(`transferIn#${this._transferInCount} stall，clearHalt`);
+          try {
+            await this._device.clearHalt('in', this._epIn);
+          } catch (e) {
+            logWebUsb(`clearHalt 失败: ${e && e.message}`);
+            this._readError = e;
+            break;
+          }
+          stallRetries += 1;
+          if (stallRetries > 8) {
+            this._readError = new Error('WebUSB IN endpoint keeps stalling');
+            break;
+          }
           continue;
         }
+        if (res.status !== 'ok') {
+          logWebUsb(`transferIn#${this._transferInCount} status=${res.status}`);
+          // 短暂的协议错误可以继续，连续失败就退出，避免空转。
+          if (++stallRetries > 8) {
+            this._readError = new Error(`WebUSB transferIn keeps failing (status=${res.status})`);
+            break;
+          }
+          continue;
+        }
+        stallRetries = 0;
         if (res.data && res.data.byteLength) {
           const bytes = new Uint8Array(
             res.data.buffer,
@@ -392,9 +479,17 @@ class WebUsbCh341Port {
         if (this._opened) {
           logWebUsb(`transferIn 错误: ${e && e.name} ${e && e.message}`);
           console.warn('WebUSB bulk IN error', e);
+          this._readError = e;
         }
         break;
       }
+    }
+    // 正常 close() 会把 _opened 置 false，此时不需要额外处理。
+    if (this._opened) {
+      this._markReadFailed(
+        this._readError ||
+          new Error('WebUSB read loop stopped (device disconnected or endpoint unavailable)')
+      );
     }
   }
 }
