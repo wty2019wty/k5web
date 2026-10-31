@@ -12,8 +12,11 @@ K5Web 用于对兼容业余无线电台 UV-K5 写频、更新固件、写入星�
 | 平台 | 连接方式 | 状态 |
 |------|----------|------|
 | 桌面 Chrome / Edge / Opera | Web Serial API | 稳定，推荐 |
+| 桌面 / 安卓 Chrome | Web Bluetooth (BLE-NUS 桥接器) | 可用，需 BLE-UART 桥接硬件 |
 | 安卓 Chrome（OTG + USB 串口写频线） | WebUSB + 多芯片驱动 | **实验性** |
 | iOS / 其他浏览器 | — | 不支持 |
+
+连接时会按 **Web Serial → WebUSB → 蓝牙 BLE** 的顺序自动回退（见 `src/utils/serial.js` 的 `connect()`）。
 
 ### 安卓 WebUSB（实验性）
 
@@ -43,6 +46,31 @@ K5Web 用于对兼容业余无线电台 UV-K5 写频、更新固件、写入星�
 - 问题反馈请附：手机型号、安卓版本、Chrome 版本、写频线芯片、控制台日志
 
 诊断工具：仓库根目录 `android-webusb-ch341.html` 可单独用于验证手机能否通过 WebUSB 连接 CH340。
+
+### 蓝牙 BLE（NUS 桥接器）
+
+当 USB 串口不可用（例如手机没有 OTG 线、或希望无线写频）时，可改用 **BLE-UART 桥接器**：设备侧提供一个跑 **Nordic UART Service (NUS)** 的蓝牙模块（如 ESP32-C3 的 `ble_uart` 组件），把 BLE 收到的字节原样转发到电台串口。
+
+**UUID（与 `ble_uart` 组件一致，实现见 `src/utils/ble-serial/`）：**
+
+| 用途 | UUID |
+|------|------|
+| Service（NUS） | `6e400001-b5a3-f393-e0a9-e50e24dcca9e` |
+| 网页 → 设备（写） | `6e400002-b5a3-f393-e0a9-e50e24dcca9e` |
+| 设备 → 网页（通知） | `6e400003-b5a3-f393-e0a9-e50e24dcca9e` |
+
+**使用条件：**
+
+- Chrome / Edge（桌面或安卓），站点需 HTTPS 或 `http://localhost`
+- 打开系统蓝牙，且桥接器处于可发现/已配对状态
+- iOS Safari 不支持 Web Bluetooth
+
+**行为说明：**
+
+- K5Web 对 BLE 只做**字节透传**，不发送 `BAUD/STATUS/FLUSH` 等控制帧；请让桥接器的 UART 波特率与固件一致（常规写频为 `38400`，UVE5 刷机为 `115200`）
+- 网页 → 设备按最小 ATT MTU 分片（20 字节）发送，兼容性优先
+- 自动回退时，若浏览器的“用户手势”已过期，会提示**再次点击“连接”**即可直接用蓝牙连接
+- 长时间刷固件请保持页面前台，避免浏览器后台节流
 
 ## 讨论
 - QQ 群：957225277  （K5Web相关）

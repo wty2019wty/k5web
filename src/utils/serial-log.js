@@ -60,9 +60,10 @@ export function isDebugOverlayEnabled() {
     return debugOverlayEnabled;
 }
 
-/** @param {'webserial'|'webusb'} mode */
+/** @param {'webserial'|'webusb'|'ble'} mode */
 export function setDebugTransport(mode) {
-    debugTransportLabel = mode === 'webserial' ? 'Web Serial' : 'WebUSB';
+    debugTransportLabel =
+        mode === 'webserial' ? 'Web Serial' : mode === 'ble' ? 'Web Bluetooth (BLE)' : 'WebUSB';
     try {
         if (typeof document === 'undefined' || !debugOverlayEnabled) return;
         // Only update an existing overlay; do not create one just to rename the title.

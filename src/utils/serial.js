@@ -1,4 +1,5 @@
 import { hasWebUsbSupport, requestWebUsbSerialPort } from './webusb-serial/index.js';
+import { hasBleSupport, requestBleSerialPort } from './ble-serial/index.js';
 import { logWebUsb, fmtHex, setDebugTransport, isDebugVerbose } from './serial-log.js';
 
 const FONT_MAPPING_117 = {
@@ -855,18 +856,44 @@ function globalRelease(target = 'all'){
     } catch {}
 }
 
-// WebUSB 多芯片串口直连路径（安卓 Chrome）。
-// 失败时返回 null；用户取消选择设备（NotFoundError）时静默，与桌面行为一致。
-async function connectWebUsb(baudRate) {
+// 蓝牙自动回退：当 USB 线路失败/取消后，Chrome 的临时用户手势往往已过期，
+// navigator.bluetooth.requestDevice 会被拒。此时置位，下一次点击“连接”优先走
+// 蓝牙（携带新的用户手势），保证“自动回退”真正可用。
+let bleFallbackArmed = false;
+
+/**
+ * 通过 Web Bluetooth(NUS) 建立串口连接。
+ * 成功返回 SerialPort 兼容对象；用户取消或无蓝牙返回 null。
+ */
+async function connectBle() {
+    if (!hasBleSupport()) {
+        logWebUsb('BLE 不可用：navigator.bluetooth 缺失');
+        return null;
+    }
     try {
-        setDebugTransport('webusb');
-        return await requestWebUsbSerialPort(baudRate);
+        setDebugTransport('ble');
+        const port = await requestBleSerialPort();
+        const info = (port.getInfo && port.getInfo()) || {};
+        logWebUsb(`BLE 连接成功 name=${info.bluetoothName || ''}`);
+        return createDiagPort(port);
     } catch (error) {
-        logWebUsb(`WebUSB serial connect failed: ${error?.name || ''} ${error?.message || error}`);
-        console.error('WebUSB serial connect failed:', error);
-        if (error?.name !== 'NotFoundError') {
-            alert(String(error && error.message ? error.message : error));
+        const name = error?.name || '';
+        const message = error?.message || String(error);
+        if (name === 'NotFoundError') {
+            // 用户在系统蓝牙选择框中取消
+            logWebUsb('BLE requestDevice 已取消');
+            return null;
         }
+        if (name === 'NotAllowedError' || name === 'SecurityError') {
+            // 多为自动回退时用户手势已过期：下次点击优先使用蓝牙
+            logWebUsb(`BLE 需要用户手势: ${name} ${message}`);
+            bleFallbackArmed = true;
+            alert('蓝牙连接需要由点击触发：请再次点击“连接”按钮即可改用蓝牙(BLE)连接。');
+            return null;
+        }
+        logWebUsb(`BLE 连接失败: ${name} ${message}`);
+        console.error('BLE connect failed:', error);
+        alert(message);
         return null;
     }
 }
@@ -874,32 +901,60 @@ async function connectWebUsb(baudRate) {
 async function connect() {
     const baudRate = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 38400;
     const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+    const serialSupported = typeof navigator !== 'undefined' && 'serial' in navigator;
+    const usbSupported = hasWebUsbSupport();
+    const bleSupported = hasBleSupport();
 
-    setDebugTransport(isAndroid ? 'webusb' : ('serial' in navigator ? 'webserial' : 'webusb'));
-    logWebUsb(`connect() baud=${baudRate} android=${isAndroid} webSerial=${'serial' in navigator} webUsb=${hasWebUsbSupport()}`);
+    // 连接优先级：安卓 WebUSB 优先；桌面 Web Serial 优先；最后回退蓝牙 BLE。
+    setDebugTransport(
+        isAndroid
+            ? (usbSupported ? 'webusb' : serialSupported ? 'webserial' : 'ble')
+            : (serialSupported ? 'webserial' : usbSupported ? 'webusb' : 'ble')
+    );
+    logWebUsb(
+        `connect() baud=${baudRate} android=${isAndroid} webSerial=${serialSupported} webUsb=${usbSupported} ble=${bleSupported}`
+    );
 
-    // 安卓 Chrome 148+ 也暴露了 navigator.serial，但它无法驱动 CH340 这类厂商自定义
-    // 设备（内核没有对应的串口驱动，Chrome 也不会写 CH341 的波特率寄存器）：
-    //   · requestPort() 可能直接抛 NotFoundError（列表里没有 CH340）；
-    //   · 也可能返回一个能 open 但收不到任何数据的“假端口”，之后的握手全部超时；
-    //   · 即使失败回退，之前的串口选择框已经消耗了用户手势，requestDevice() 会抛
-    //     SecurityError: Must be handling a user gesture to show a permission request.
-    // 所以在安卓上只要浏览器提供 WebUSB，就直接走 WebUSB，绝不先碰原生 Web Serial。
-    // 只有连 navigator.usb 都没有时，才退回下面的 Web Serial 分支（此时也没有别的选择）。
-    if (isAndroid && hasWebUsbSupport()) {
-        return await connectWebUsb(baudRate);
+    // 0) 上一轮回退时用户手势已过期，本次点击优先用蓝牙
+    if (bleFallbackArmed && bleSupported) {
+        bleFallbackArmed = false;
+        return connectBle();
     }
 
-    // 1) 桌面：原生 Web Serial 优先
-    if ('serial' in navigator) {
+    let usbError = null;
+
+    // 1) 安卓：只要浏览器提供 WebUSB，就直接走 WebUSB，绝不先碰原生 Web Serial。
+    //    安卓 Chrome 148+ 也暴露 navigator.serial，但它无法驱动 CH340 这类厂商自定义
+    //    设备（内核没有对应的串口驱动，Chrome 也不会写 CH341 的波特率寄存器）：
+    //      · requestPort() 可能直接抛 NotFoundError（列表里没有 CH340）；
+    //      · 也可能返回一个能 open 但收不到任何数据的“假端口”，之后的握手全部超时；
+    //      · 而且弹出的串口选择框会消耗用户手势，让随后的 requestDevice() 抛
+    //        SecurityError: Must be handling a user gesture to show a permission request.
+    //    只有连 navigator.usb 都没有时，才退回下面的 Web Serial 分支（此时也没有别的选择）。
+    if (isAndroid && usbSupported) {
+        try {
+            setDebugTransport('webusb');
+            return await requestWebUsbSerialPort(baudRate);
+        } catch (error) {
+            usbError = error;
+            logWebUsb(`WebUSB serial connect failed: ${error?.name || ''} ${error?.message || error}`);
+            console.error('WebUSB serial connect failed:', error);
+            // 不在此处 alert：先尝试蓝牙回退，全部失败后再报错。
+        }
+    }
+
+    // 2) 原生 Web Serial（桌面 Chrome/Edge；安卓仅在缺少 WebUSB 时兜底）
+    if (serialSupported && (!isAndroid || !usbSupported)) {
         let port = undefined
+        let serialCancelled = false;
         try {
             port = await navigator.serial.requestPort();
             logWebUsb(`requestPort ok usbVendorId=0x${(port?.usbVendorId ?? 0).toString(16)} usbProductId=0x${(port?.usbProductId ?? 0).toString(16)}`);
         } catch(error) {
             logWebUsb(`requestPort 失败: ${error?.name || ''} ${error?.message || error}`);
             console.log('Web Serial requestPort: ' + error)
-            return null;
+            // 用户取消选择（NotFoundError）：不再弹 WebUSB 选择框，必要时直接回退蓝牙。
+            if (error?.name === 'NotFoundError') serialCancelled = true;
         }
         if (port) {
             try {
@@ -916,15 +971,41 @@ async function connect() {
                 logWebUsb(`port.open 失败: ${error?.name || ''} ${error?.message || error}`);
                 console.error('Error connecting to the serial port:', error);
                 try { await port.close(); } catch {}
-                return null;
+                // open 失败不再直接返回：继续走后面的回退（蓝牙 BLE）。
+                // 安卓上 WebUSB 已在前面优先尝试过，到这里说明本机没有 navigator.usb。
             }
+        }
+        // 桌面用户在 Web Serial 中取消：跳过 WebUSB，直接进入蓝牙回退。
+        if (serialCancelled && !isAndroid) {
+            return bleSupported ? connectBle() : null;
         }
     }
 
-    // 2) 非安卓兜底：WebUSB（CH340/CP210x/PL2303/FTDI）
-    if (hasWebUsbSupport()) {
-        return await connectWebUsb(baudRate);
+    // 3) 非安卓兜底：WebUSB（没有 Web Serial 的浏览器，如 Firefox）
+    if (!isAndroid && usbSupported && !serialSupported) {
+        try {
+            setDebugTransport('webusb');
+            return await requestWebUsbSerialPort(baudRate);
+        } catch (error) {
+            usbError = error;
+            logWebUsb(`WebUSB serial connect failed: ${error?.name || ''} ${error?.message || error}`);
+            console.error('WebUSB serial connect failed:', error);
+            // 不在此处 alert：先尝试蓝牙回退，全部失败后再报错。
+        }
     }
+
+    // 4) 蓝牙 BLE 回退（NUS 桥接器）
+    if (bleSupported) {
+        return connectBle();
+    }
+
+    // 没有可用回退：报出 WebUSB 的真实错误（用户取消除外），否则提示浏览器不支持。
+    if (usbError && usbError.name !== 'NotFoundError') {
+        alert(String(usbError.message || usbError));
+        return null;
+    }
+    // 用户在设备选择框里取消（NotFoundError）：静默返回，与桌面 Web Serial 行为一致。
+    if (usbError) return null;
 
     // Single alert owned here; navbar must not also alert when connect() returns null.
     alert('当前浏览器不支持网页串口/USB 串口功能，请使用 Chrome, Edge, Opera 浏览器。');
@@ -2100,6 +2181,7 @@ function readSMSPacket(port) {
 export {
     connect,
     disconnect,
+    hasBleSupport,
     sendPacket,
     readPacket,
     uint8ArrayToString,
